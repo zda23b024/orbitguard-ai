@@ -1,6 +1,6 @@
 # Final integration evidence — 2026-10-14
 
-Overall status: **PASS** for local build, scientific/API validation, offline/current cached-data workflows, and integrated-browser UI checks. **BLOCKED** for live Gemini verification because the local key is not in a recognizable Google API-key format; no key was sent. **NOT DEPLOYED**.
+Overall status: **PASS** for local build, scientific/API validation, offline/current cached-data workflows, and integrated-browser UI checks. **BLOCKED** for Gemini-generated wording: the single server-side verification request returned HTTP 503 and the deterministic explanation was returned. The key was not printed or logged. **NOT DEPLOYED**.
 
 ## Numerical correction
 
@@ -42,6 +42,10 @@ The VS Code integrated browser exercised the final production bundle at a compac
 - Synthetic mode: calculated 9.611 km, displayed the synthetic disclaimer, generated deterministic wording, and returned to the original catalog without reload.
 
 The production simulation now starts paused and updates at 4 Hz during playback to avoid repeated whole-catalog renders at 10 Hz. UI button click helpers in this integrated browser were intermittently blocked by its pointer-coordinate mapping; application state changes were verified through DOM-dispatched React clicks, while drag and wheel delivery were confirmed by canvas event listeners and changed captures.
+
+## Gemini verification
+
+Google's model documentation lists `gemini-3.8-flash` as stable. A single `POST /api/ai/explain` request was made with `ORBITGUARD_OFFLINE_MODE=true`, `ORBITGUARD_DISABLE_GEMINI=false`, and that model identifier. The server entered the Gemini request path; Google returned HTTP 503. The API responded with `source=deterministic` and `fallbackReason=request_failed`, and the provider-cache attempt timestamps were unchanged. Thus offline mode does not disable Gemini, but a Gemini-generated explanation was **not verified working** in this run. The UI reports that Gemini is unavailable and deterministic wording is shown. The key remained server-side and was neither printed nor logged.
 
 ## Hosting cache requirement
 

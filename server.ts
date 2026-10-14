@@ -210,7 +210,12 @@ app.post('/api/ai/explain', async (req: Request, res: Response) => {
     const deterministicExplanation = `${sat.isSynthetic || deb.isSynthetic ? 'This is a synthetic controlled-orbit demonstration, not an observed conjunction. ' : historicalSnapshot ? `This analysis uses a verified historical provider snapshot${snapshotCapturedAt ? ` captured ${snapshotCapturedAt}` : ''}; it is not current orbital data. ` : ''}The time and minimum distance identify the closest point found within the selected search window. Relative speed is calculated from the two propagated velocity vectors. The configured distance is an educational screen; the application does not quantify uncertainty or make an operational safety decision.`;
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (process.env.ORBITGUARD_DISABLE_GEMINI === 'true' || !apiKey) {
-      res.json({ summary, explanation: deterministicExplanation, source: 'deterministic' });
+      res.json({
+        summary,
+        explanation: deterministicExplanation,
+        source: 'deterministic',
+        fallbackReason: process.env.ORBITGUARD_DISABLE_GEMINI === 'true' ? 'disabled' : 'not_configured',
+      });
       return;
     }
 
@@ -243,13 +248,14 @@ app.post('/api/ai/explain', async (req: Request, res: Response) => {
       const explanation = response.text?.trim() || '';
       const disallowed = /\d|probab|chance|odds|likelihood|collis|maneuver|safe|risk|danger|threat|avoid|predict|guarantee|certain|priority|score|hazard|warning|urgent|critical|recommend|decision|reliab|accurac|confiden|uncertain|overlap|intersect|impact/i;
       if (!explanation || explanation.length > 600 || disallowed.test(explanation) || /https?:\/\//i.test(explanation)) {
-        res.json({ summary, explanation: deterministicExplanation, source: 'deterministic' });
+        res.json({ summary, explanation: deterministicExplanation, source: 'deterministic', fallbackReason: 'response_rejected' });
         return;
       }
       res.json({ summary, explanation, source: 'gemini' });
     } catch (error) {
-      console.warn('Gemini explanation unavailable; returning deterministic explanation.');
-      res.json({ summary, explanation: deterministicExplanation, source: 'deterministic' });
+      const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
+      console.warn('Gemini explanation request failed; returning deterministic explanation.', typeof status === 'number' ? status : 'unknown status');
+      res.json({ summary, explanation: deterministicExplanation, source: 'deterministic', fallbackReason: 'request_failed' });
     }
   } catch (error) {
     res.status(500).json({ error: 'Could not compute a verified explanation from the supplied catalog objects.' });

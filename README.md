@@ -36,6 +36,17 @@ Create a **Web Service** from this repository using the **Node** runtime. Set:
 
 Render supplies `PORT`; the Express server binds to `0.0.0.0` and serves the built frontend and API in production. Do not set `GEMINI_API_KEY` for this offline deployment. No CelesTrak requests are made while offline mode is enabled. The historical snapshot is loaded from `data/snapshots/` if that file is included in the deployed source; the synthetic educational demonstration works without it.
 
+To enable Gemini wording while keeping orbital data offline, use these Render environment variables instead:
+
+```text
+ORBITGUARD_OFFLINE_MODE=true
+ORBITGUARD_DISABLE_GEMINI=false
+GEMINI_MODEL=gemini-3.8-flash
+GEMINI_API_KEY=<set as a secret environment variable in Render>
+```
+
+`ORBITGUARD_OFFLINE_MODE` only disables CelesTrak retrieval; it does not disable Gemini. Keep the key in Render's secret environment settings, never in this repository or client-side settings. If Gemini is unavailable or its response fails validation, the app reports that deterministic wording is shown and preserves the calculated measurements.
+
 For live mode on Render, attach a persistent disk mounted at `/var/data` and set `ORBITGUARD_CACHE_DIR=/var/data`. The catalog and provider cooldown cache otherwise lives in the OS temporary directory and may be lost on restart or redeploy. Initial page loads never trigger provider requests; use the refresh control only when the saved cache is eligible. Do not enable live mode for the competition deployment unless you have configured durable storage and are ready to use CelesTrak data.
 
 To create the service, connect the Git repository in the Render dashboard, choose **New → Web Service**, select **Node**, enter the commands and variables above, and create the service. This repository has no Render blueprint, so creating cloud resources remains an account-owner action. Render account access and any applicable plan/billing selection are required. Do not enable live data for this deployment.

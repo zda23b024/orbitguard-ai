@@ -33,11 +33,13 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
   const [activeTab, setActiveTab] = useState<'PHYSICS' | 'SCREENING' | 'BRIEFING'>('PHYSICS');
   const [briefing, setBriefing] = useState<string | null>(null);
   const [briefingSource, setBriefingSource] = useState<'gemini' | 'deterministic' | 'local' | null>(null);
+  const [briefingStatus, setBriefingStatus] = useState<string | null>(null);
   const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
 
   useEffect(() => {
     setBriefing(null);
     setBriefingSource(null);
+    setBriefingStatus(null);
   }, [encounter?.calculatedAtIso]);
 
   if (!encounter) {
@@ -89,12 +91,29 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
         }),
       });
       if (!response.ok) throw new Error(`Explanation request failed (${response.status}).`);
-      const result = await response.json() as { summary: string; explanation: string; source: 'gemini' | 'deterministic' };
+      const result = await response.json() as {
+        summary: string;
+        explanation: string;
+        source: 'gemini' | 'deterministic';
+        fallbackReason?: 'disabled' | 'not_configured' | 'request_failed' | 'response_rejected';
+      };
       setBriefing(`${result.summary}\n\nEXPLANATION (${result.source === 'gemini' ? 'Gemini language only' : 'deterministic fallback'})\n${result.explanation}`);
       setBriefingSource(result.source);
+      setBriefingStatus(result.source === 'gemini'
+        ? 'Gemini wording · measurements computed by SGP4'
+        : result.fallbackReason === 'request_failed'
+          ? 'Gemini unavailable · deterministic explanation shown'
+          : result.fallbackReason === 'response_rejected'
+            ? 'Gemini wording rejected · deterministic explanation shown'
+            : result.fallbackReason === 'disabled'
+              ? 'Gemini disabled · deterministic explanation shown'
+              : result.fallbackReason === 'not_configured'
+                ? 'Gemini key not configured · deterministic explanation shown'
+                : 'Deterministic explanation shown');
     } catch {
       setBriefing(`${buildLocalSummary()}\n\nEXPLANATION (local fallback)\nThe closest point and relative speed are computed from propagated states in the selected window. The configured threshold is educational only; the application does not quantify uncertainty or provide operational guidance.`);
       setBriefingSource('local');
+      setBriefingStatus('Explanation service unavailable · local deterministic wording shown');
     } finally {
       setIsGeneratingBriefing(false);
     }
@@ -340,7 +359,7 @@ export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
               <div className="text-xs uppercase font-bold text-cyan-400 tracking-wider flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-cyan-400" />
                 <span>Scientific Screening Summary</span>
-                {briefingSource && <span className="ml-2 text-[9px] text-slate-400">{briefingSource === 'gemini' ? 'Gemini wording · measurements computed by SGP4' : 'Deterministic wording'}</span>}
+                {briefingStatus && <span className="ml-2 text-[9px] text-slate-400">{briefingStatus}</span>}
               </div>
               <button
                 onClick={handleGenerateBriefing}

@@ -77,6 +77,7 @@ for (let boot = 1; boot <= 2; boot++) {
     assert.equal(apiResult.tCaIso, result.tCaIso);
     const explanation = await (await request('/api/ai/explain', body)).json();
     assert.equal(explanation.source, 'deterministic');
+    assert.equal(explanation.fallbackReason, 'disabled');
     assert.ok(explanation.summary.includes(`${result.minSeparationKm.toFixed(3)} km`));
     assert.match(explanation.summary, /historical/);
     const syntheticExplanation = await (await request('/api/ai/explain', { satelliteId: synthetic[0].id, debrisId: synthetic[1].id, startTime: SYNTHETIC_SCENARIO_START, timeWindowHours: SYNTHETIC_SCENARIO_WINDOW_HOURS, thresholdKm: SYNTHETIC_SCENARIO_THRESHOLD_KM })).json();
