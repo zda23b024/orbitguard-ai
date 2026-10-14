@@ -20,14 +20,14 @@ export function createProceduralEarthTexture(): THREE.CanvasTexture {
 
   // 1. Deep Ocean Base
   const oceanGrad = ctx.createLinearGradient(0, 0, 0, height);
-  oceanGrad.addColorStop(0, '#0a1d37');
-  oceanGrad.addColorStop(0.5, '#07162c');
-  oceanGrad.addColorStop(1, '#0a1d37');
+  oceanGrad.addColorStop(0, '#1a5d8b');
+  oceanGrad.addColorStop(0.5, '#0c3b68');
+  oceanGrad.addColorStop(1, '#1a5d8b');
   ctx.fillStyle = oceanGrad;
   ctx.fillRect(0, 0, width, height);
 
   // 2. Latitude/Longitude Grid Lines (Graticule)
-  ctx.strokeStyle = 'rgba(55, 201, 232, 0.08)';
+  ctx.strokeStyle = 'rgba(95, 205, 232, 0.16)';
   ctx.lineWidth = 1;
   // Longitude meridians every 30 degrees (12 lines)
   for (let i = 0; i < width; i += width / 12) {
@@ -45,7 +45,7 @@ export function createProceduralEarthTexture(): THREE.CanvasTexture {
   }
 
   // Equator highlight
-  ctx.strokeStyle = 'rgba(55, 201, 232, 0.25)';
+  ctx.strokeStyle = 'rgba(95, 205, 232, 0.35)';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(0, height / 2);
@@ -75,9 +75,9 @@ export function createProceduralEarthTexture(): THREE.CanvasTexture {
     ctx.stroke();
   };
 
-  const landColor = '#1a3328';
-  const desertColor = '#2f3b28';
-  const tundraColor = '#24373e';
+  const landColor = '#4b8858';
+  const desertColor = '#987a4f';
+  const tundraColor = '#66858e';
 
   // Africa (including Zanzibar and East Africa)
   drawLandPoly(

@@ -1,6 +1,6 @@
 # Final integration evidence — 2026-10-14
 
-Overall status: **BLOCKED on fresh Chrome interface verification**. The browser-control inventory returned no browsers, and opening Chrome returned `Browser is not available: chrome`. Earlier browser evidence in VALIDATION_REPORT.md describes an earlier version and is not a fresh pass for this revision.
+Overall status: **PASS** for local build, scientific/API validation, offline/current cached-data workflows, and integrated-browser UI checks. **BLOCKED** for live Gemini verification because the local key is not in a recognizable Google API-key format; no key was sent. **NOT DEPLOYED**.
 
 ## Numerical correction
 
@@ -33,4 +33,16 @@ Final revision: **PASS** TypeScript (`tsc --noEmit`), **PASS** production build 
 
 Conventional Node.js hosting uses the source, installed runtime dependencies, generated dist directory, and bundled data/snapshots JSON, with offline and deterministic-explanation environment settings. It does not depend on a persisted temporary cache. Nothing was deployed.
 
-Fresh Chrome checks remain required for object selection, WebGL visualization, result display, chart interaction, closest-time navigation, and both explanation workflows. Deployment readiness cannot be fully signed off until these pass.
+## Fresh integrated-browser checks
+
+The VS Code integrated browser exercised the final production bundle at a compact 723 × 341 CSS-pixel viewport. The monitor rendered an active WebGL2 canvas with the procedural Earth, orbit markers, object counts, and provenance labels. The Earth texture was brightened after the initial screenshot showed insufficient contrast. The controls dock is now height-bounded and scrollable; its toggle remained on-screen below the header. Pointer and wheel events reached the WebGL canvas, and before/after canvas captures differed after drag and zoom.
+
+- Current cached mode: selected Sentinel-2A #40697 and FENGYUN 1C debris #31946, calculated 14.203 km, 1.016 km/s, and `2026-10-14T22:01:54.189Z`; chart and closest-time navigation worked; the deterministic briefing reported the same measurements and limitations.
+- Historical mode: selected Sentinel-2A #40697 and COSMOS 2251 debris #34454, calculated 2,443.754 km and 9.270 km/s; the brief identified the snapshot capture time and said the data is not current.
+- Synthetic mode: calculated 9.611 km, displayed the synthetic disclaimer, generated deterministic wording, and returned to the original catalog without reload.
+
+The production simulation now starts paused and updates at 4 Hz during playback to avoid repeated whole-catalog renders at 10 Hz. UI button click helpers in this integrated browser were intermittently blocked by its pointer-coordinate mapping; application state changes were verified through DOM-dispatched React clicks, while drag and wheel delivery were confirmed by canvas event listeners and changed captures.
+
+## Hosting cache requirement
+
+Offline competition deployment loads the committed verified snapshot and does not need a persistent disk. Live-provider mode defaults to the OS temporary directory; on a host with ephemeral storage, set `ORBITGUARD_CACHE_DIR` to a mounted persistent path to preserve successful data and cooldowns across restarts. Render instructions use `/var/data` as the mount example. No service was deployed.

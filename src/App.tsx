@@ -75,7 +75,7 @@ export default function App() {
 
   // Simulation timeline state
   const [simTime, setSimTime] = useState<Date>(() => new Date());
-  const [isPlaying, setIsPlaying] = useState<boolean>(true);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(60);
 
   // Modals
@@ -163,7 +163,7 @@ export default function App() {
     setEncounterResult(null);
     const snapshotTime = satellite?.snapshotCapturedAtIso || debris?.snapshotCapturedAtIso;
     setSimTime(snapshotTime ? new Date(snapshotTime) : new Date());
-    setIsPlaying(!snapshotTime);
+    setIsPlaying(false);
   };
 
   const flaggedCount = encounterResult && encounterResult.screeningFlag ? 1 : 0;

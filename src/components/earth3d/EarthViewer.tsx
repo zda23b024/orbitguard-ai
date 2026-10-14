@@ -52,6 +52,7 @@ interface EarthViewerProps {
 
 const EARTH_RADIUS_UNITS = 100;
 const KM_TO_UNITS = EARTH_RADIUS_UNITS / 6378.137;
+const SIMULATION_TICK_INTERVAL_MS = 250;
 
 export const EarthViewer: React.FC<EarthViewerProps> = ({
   objects,
@@ -581,10 +582,9 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
-      // 100ms real tick * simSpeedMultiplier seconds
-      const deltaSimMs = (100 * simSpeedMultiplier);
+      const deltaSimMs = SIMULATION_TICK_INTERVAL_MS * simSpeedMultiplier;
       onSimTimeChange(new Date(simTime.getTime() + deltaSimMs));
-    }, 100);
+    }, SIMULATION_TICK_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [isPlaying, simTime, simSpeedMultiplier, onSimTimeChange]);
@@ -734,9 +734,9 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
       )}
 
       {/* Ergonomic Collapsible Bottom Control Dock (Per Three.js Constitution) */}
-      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 w-[94%] max-w-3xl">
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 w-[94%] max-w-3xl pointer-events-none" style={{ height: 'calc(100% - 1rem)' }}>
         {/* Toggle Drawer Button */}
-        <div className="flex justify-center -mb-2">
+        <div className="flex justify-center -mb-2 pointer-events-auto">
           <button
             onClick={() => setControlsCollapsed(!controlsCollapsed)}
             className="flex items-center gap-1.5 px-3 py-1 bg-[#11243A] hover:bg-[#193352] border border-[#24364B] rounded-t-lg text-slate-300 hover:text-cyan-400 text-xs font-medium cursor-pointer shadow-md backdrop-blur-md transition"
@@ -756,7 +756,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         </div>
 
         {!controlsCollapsed && (
-          <div className="bg-[#11243A]/95 border border-[#24364B] rounded-xl p-3 shadow-2xl backdrop-blur-md flex flex-col gap-2.5 overflow-y-auto" style={{ maxHeight: 'calc(100% - 3rem)' }}>
+          <div className="bg-[#11243A]/95 border border-[#24364B] rounded-xl p-3 shadow-2xl backdrop-blur-md flex flex-col gap-2.5 overflow-y-auto pointer-events-auto" style={{ maxHeight: 'calc(100% - 2rem)' }}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               {/* Play / Pause & Time readout */}
               <div className="flex items-center gap-2">

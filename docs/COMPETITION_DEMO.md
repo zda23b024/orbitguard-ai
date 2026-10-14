@@ -29,6 +29,10 @@ The app does not fetch provider data on startup, when changing modules, or durin
 
 The 14.2 km result is a pairwise SGP4 screening estimate from real provider elements. It is not an independently confirmed conjunction and does not establish collision probability or operational risk.
 
+### Historical non-close reference
+
+In the same analyzer, choose **Sentinel-2A vs COSMOS 2251 Debris**. This preset selects NORAD #40697 and #34454 from the historical snapshot, starts at its capture time, and calculates the result from those saved OMM elements. The verified run returned about **2,443.754 km**, **9.270 km/s**, and **2026-10-15T18:18:22.125Z**. The pair is above the 25 km educational screen; it is not evidence of an independently confirmed event. The preset is unavailable if either record is absent from the selected catalog.
+
 ## Verified current-data subset
 
 The controlled provider test retrieved one payload using CelesTrak's documented `CATNR=40697` query and retained 2,675 records from the three configured debris groups. These records are a verified subset, not a complete satellite or debris catalog. During the browser verification, the payload feed was marked current and the older debris feeds were marked cached. The UI exposed each feed's source, download time, and element epochs.
