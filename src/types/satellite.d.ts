@@ -34,6 +34,7 @@ declare module 'satellite.js' {
   }
 
   export function twoline2satrec(longstr1: string, longstr2: string): SatRec;
+  export function json2satrec(omm: Record<string, unknown>): SatRec;
   export function propagate(satrec: SatRec, date: Date): PositionAndVelocity;
   export function sgp4(satrec: SatRec, timeSinceEpochMinutes: number): PositionAndVelocity;
   export function gstime(date: Date): number;

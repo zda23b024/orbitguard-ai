@@ -2,5 +2,5 @@
   "name": "OrbitGuard AI",
   "description": "Intelligent Satellite and Space Debris Close-Approach Analysis platform for the Zanzibar Astronomy and Space Society (ZASS) Space Science Innovation Competition 2026.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }

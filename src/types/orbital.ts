@@ -6,10 +6,22 @@
 export type ObjectClassification = 'PAYLOAD' | 'DEBRIS' | 'ROCKET BODY' | 'UNKNOWN';
 
 export interface OrbitalObject {
-  id: string; // NORAD ID as string
+  id: string; // Catalog ID as string; synthetic scenarios use explicit SYNTHETIC IDs.
   noradId: number;
+  /** Synthetic teaching objects have no real NORAD/catalog identity. */
+  isSynthetic?: boolean;
+  /** Time this source record was retrieved by OrbitGuard (separate from element epoch). */
+  downloadedAtIso?: string;
+  /** Capture time of the local historical snapshot containing this source record. */
+  snapshotCapturedAtIso?: string;
+  /** Provenance mode prevents historical/synthetic objects from masquerading as current GP. */
+  dataMode?: 'current' | 'historical' | 'synthetic';
+  /** CelesTrak GP group key for per-group cache and cooldown accounting. */
+  dataGroup?: string;
   name: string;
   classification: ObjectClassification;
+  /** Exact provider OBJECT_TYPE when supplied; classification is the app's normalized category. */
+  providerClassification?: string;
   intlDes: string;
   epoch: string; // ISO string
   epochYear: number;
@@ -27,7 +39,13 @@ export interface OrbitalObject {
   orbitClass: 'LEO' | 'MEO' | 'GEO' | 'HEO';
   tleLine1: string;
   tleLine2: string;
+  /** Original CelesTrak GP/OMM JSON record when the source is not TLE text. */
+  omm?: Record<string, unknown>;
   source: string;
+}
+
+export function formatObjectIdentifier(object: OrbitalObject): string {
+  return object.isSynthetic ? 'SYNTHETIC · NO NORAD ID' : `NORAD #${object.noradId}`;
 }
 
 export interface Vector3D {
@@ -65,19 +83,19 @@ export interface FeatureContribution {
   feature: string;
   label: string;
   value: string;
-  impactWeight: number; // positive increases risk, negative decreases
+  impactWeight: number; // positive raises screening priority, negative lowers it
   description: string;
 }
 
-export interface MLScreeningAssessment {
-  riskScore: number; // 0-100
-  riskTier: 'CRITICAL_REVIEW' | 'MODERATE_MONITOR' | 'ROUTINE_PASS';
+export interface EducationalPriorityAssessment {
+  priorityIndex: number; // uncalibrated 0-100 heuristic index
+  priorityTier: 'HIGH_REVIEW' | 'MODERATE_MONITOR' | 'ROUTINE_SCREEN';
   featureContributions: FeatureContribution[];
   explanation: string;
-  surrogateAccuracy: string;
 }
 
 export interface EncounterAnalysisResult {
+  calculationStatus: 'COMPLETED_ESTIMATE';
   satellite: OrbitalObject;
   debris: OrbitalObject;
   startTimeIso: string;
@@ -100,7 +118,7 @@ export interface EncounterAnalysisResult {
     satellite: number;
     debris: number;
   };
-  mlScreening: MLScreeningAssessment;
+  educationalScreening: EducationalPriorityAssessment;
   calculatedAtIso: string;
 }
 

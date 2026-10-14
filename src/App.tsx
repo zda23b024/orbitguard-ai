@@ -3,19 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useCallback } from 'react';
 import {
   EncounterAnalysisResult,
   OrbitalObject,
 } from './types/orbital';
 import {
-  CATALOGUED_ORBITAL_OBJECTS,
   DataStatus,
-  fetchOrbitalObjects,
   getDataStatus,
 } from './services/celestrakService';
-import { analyzeCloseApproach } from './services/orbitalEngine';
-import { EarthViewer } from './components/earth3d/EarthViewer';
+import { createSyntheticEducationalPair, SYNTHETIC_SCENARIO_START } from './services/syntheticScenario';
 import { OrbitalMonitor } from './components/modules/OrbitalMonitor';
 import { EncounterAnalyzer } from './components/modules/EncounterAnalyzer';
 import { ExplainableAnalysis } from './components/modules/ExplainableAnalysis';
@@ -39,9 +36,23 @@ import {
   X,
 } from 'lucide-react';
 
+const EarthViewer = lazy(() => import('./components/earth3d/EarthViewer').then((module) => ({ default: module.EarthViewer })));
+
+async function loadCatalogFromApi(refresh?: 'all' | 'satellite'): Promise<{ objects: OrbitalObject[]; status: DataStatus }> {
+  const refreshQuery = refresh === 'satellite' ? '?refresh=satellite' : refresh === 'all' ? '?refresh=true' : '';
+  const objectsResponse = await fetch(`/api/objects${refreshQuery}`);
+  if (!objectsResponse.ok) throw new Error(`Catalog request failed (${objectsResponse.status}).`);
+  const objects = await objectsResponse.json() as OrbitalObject[];
+  const statusResponse = await fetch('/api/data/status');
+  if (!statusResponse.ok) throw new Error(`Data status request failed (${statusResponse.status}).`);
+  const status = await statusResponse.json() as DataStatus;
+  return { objects, status };
+}
+
 export default function App() {
-  const [objects, setObjects] = useState<OrbitalObject[]>(CATALOGUED_ORBITAL_OBJECTS);
-  const [dataStatus, setDataStatus] = useState<DataStatus>(getDataStatus());
+  const [objects, setObjects] = useState<OrbitalObject[]>([]);
+  const [catalogObjects, setCatalogObjects] = useState<OrbitalObject[]>([]);
+  const [dataStatus, setDataStatus] = useState<DataStatus>(() => getDataStatus());
   const [isRefreshingData, setIsRefreshingData] = useState<boolean>(false);
 
   // Active module navigation
@@ -49,30 +60,21 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(true);
 
   // Interactive selection state shared across all modules
-  const [selectedObject, setSelectedObject] = useState<OrbitalObject | null>(() => {
-    return CATALOGUED_ORBITAL_OBJECTS.find((o) => o.noradId === 40697) || null; // Sentinel-2A
-  });
+  const [selectedObject, setSelectedObject] = useState<OrbitalObject | null>(null);
 
-  const [selectedSatellite, setSelectedSatellite] = useState<OrbitalObject | null>(() => {
-    return CATALOGUED_ORBITAL_OBJECTS.find((o) => o.noradId === 40697) || null; // Sentinel-2A
-  });
+  const [selectedSatellite, setSelectedSatellite] = useState<OrbitalObject | null>(null);
 
-  const [selectedDebris, setSelectedDebris] = useState<OrbitalObject | null>(() => {
-    return CATALOGUED_ORBITAL_OBJECTS.find((o) => o.noradId === 34454) || null; // Cosmos 2251 Debris
-  });
+  const [selectedDebris, setSelectedDebris] = useState<OrbitalObject | null>(null);
 
-  const [encounterResult, setEncounterResult] = useState<EncounterAnalysisResult | null>(() => {
-    // Pre-calculate canonical demo encounter on initial load so the entire suite is populated
-    const sat = CATALOGUED_ORBITAL_OBJECTS.find((o) => o.noradId === 40697);
-    const deb = CATALOGUED_ORBITAL_OBJECTS.find((o) => o.noradId === 34454);
-    if (sat && deb) {
-      return analyzeCloseApproach(sat, deb, new Date(), 24, 25);
-    }
-    return null;
-  });
+  const hasPayloadAndDebris = dataStatus.satelliteFeed.recordCount > 0 && dataStatus.debrisFeed.recordCount > 0;
+  const bothFeedsCurrent = dataStatus.satelliteFeed.state === 'current' && dataStatus.debrisFeed.state === 'current';
+  const historicalSnapshotLoaded = dataStatus.provenanceMode === 'historical'
+    && dataStatus.satelliteFeed.recordCount > 0 && dataStatus.debrisFeed.recordCount > 0;
+
+  const [encounterResult, setEncounterResult] = useState<EncounterAnalysisResult | null>(null);
 
   // Simulation timeline state
-  const [simTime, setSimTime] = useState<Date>(new Date());
+  const [simTime, setSimTime] = useState<Date>(() => new Date());
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [simSpeedMultiplier, setSimSpeedMultiplier] = useState<number>(60);
 
@@ -80,14 +82,23 @@ export default function App() {
   const [isValidationOpen, setIsValidationOpen] = useState<boolean>(false);
   const [isDemoGuideOpen, setIsDemoGuideOpen] = useState<boolean>(false);
 
-  // Load live CelesTrak catalog on mount
+  // Initial catalog reads are cache-only; provider calls happen through the explicit refresh control.
   useEffect(() => {
     let isMounted = true;
-    fetchOrbitalObjects().then((fetched) => {
-      if (isMounted && fetched.length > 0) {
+    loadCatalogFromApi().then(({ objects: fetched, status }) => {
+      if (isMounted) {
         setObjects(fetched);
-        setDataStatus(getDataStatus());
+        setCatalogObjects(fetched);
+        setDataStatus(status);
+        setSimTime(status.provenanceMode === 'historical' && Number.isFinite(Date.parse(status.lastFetchedIso))
+          ? new Date(status.lastFetchedIso)
+          : new Date());
+        setSelectedSatellite((current) => fetched.find((o) => o.id === current?.id) || fetched.find((o) => o.classification === 'PAYLOAD') || null);
+        setSelectedDebris((current) => fetched.find((o) => o.id === current?.id) || fetched.find((o) => o.classification === 'DEBRIS' || o.classification === 'ROCKET BODY') || null);
+        setSelectedObject((current) => fetched.find((o) => o.id === current?.id) || fetched[0] || null);
       }
+    }).catch((error: unknown) => {
+      if (isMounted) setDataStatus((current) => ({ ...current, lastError: error instanceof Error ? error.message : 'Unable to load catalog.' }));
     });
     return () => {
       isMounted = false;
@@ -97,35 +108,68 @@ export default function App() {
   const handleManualDataRefresh = async () => {
     setIsRefreshingData(true);
     try {
-      const fresh = await fetchOrbitalObjects();
+      const refreshScope = dataStatus.debrisFeed.recordCount > 0 ? 'satellite' : 'all';
+      const { objects: fresh, status } = await loadCatalogFromApi(refreshScope);
       setObjects(fresh);
-      setDataStatus(getDataStatus());
+      setCatalogObjects(fresh);
+      setDataStatus(status);
+      setSimTime(new Date());
+      setEncounterResult(null);
+      setSelectedSatellite((current) => fresh.find((o) => o.id === current?.id) || fresh.find((o) => o.classification === 'PAYLOAD') || null);
+      setSelectedDebris((current) => fresh.find((o) => o.id === current?.id) || fresh.find((o) => o.classification === 'DEBRIS' || o.classification === 'ROCKET BODY') || null);
+      setSelectedObject((current) => fresh.find((o) => o.id === current?.id) || fresh[0] || null);
+    } catch (error) {
+      setDataStatus((current) => ({ ...current, lastError: error instanceof Error ? error.message : 'Unable to refresh catalog.' }));
     } finally {
       setIsRefreshingData(false);
     }
   };
 
   const handleSwitchToAnalyzerWithObject = (obj: OrbitalObject) => {
+    setEncounterResult(null);
     if (obj.classification === 'PAYLOAD') {
       setSelectedSatellite(obj);
-    } else {
+    } else if (obj.classification === 'DEBRIS' || obj.classification === 'ROCKET BODY') {
       setSelectedDebris(obj);
+    } else {
+      return;
     }
     setActiveModule('analyzer');
   };
 
-  const handleLoadPresetScenario = () => {
-    const s = objects.find((o) => o.noradId === 40697) || null;
-    const d = objects.find((o) => o.noradId === 34454) || null;
-    setSelectedSatellite(s);
-    setSelectedDebris(d);
-    if (s && d) {
-      const res = analyzeCloseApproach(s, d, simTime, 24, 25);
-      setEncounterResult(res);
-    }
+  const handleLoadSyntheticScenario = () => {
+    const [syntheticSatellite, syntheticDebris] = createSyntheticEducationalPair();
+    setObjects([syntheticSatellite, syntheticDebris]);
+    setSelectedSatellite(syntheticSatellite);
+    setSelectedDebris(syntheticDebris);
+    setSelectedObject(syntheticSatellite);
+    setEncounterResult(null);
+    setSimTime(new Date(SYNTHETIC_SCENARIO_START));
+    setIsPlaying(false);
+    setActiveModule('analyzer');
+  };
+
+  const handleReturnToCatalog = () => {
+    setObjects(catalogObjects);
+    const satellite = catalogObjects.find((object) => object.noradId === 40697)
+      || catalogObjects.find((object) => object.classification === 'PAYLOAD')
+      || null;
+    const debris = catalogObjects.find((object) => object.noradId === 34454)
+      || catalogObjects.find((object) => object.classification === 'DEBRIS' || object.classification === 'ROCKET BODY')
+      || null;
+    setSelectedSatellite(satellite);
+    setSelectedDebris(debris);
+    setSelectedObject(satellite);
+    setEncounterResult(null);
+    const snapshotTime = satellite?.snapshotCapturedAtIso || debris?.snapshotCapturedAtIso;
+    setSimTime(snapshotTime ? new Date(snapshotTime) : new Date());
+    setIsPlaying(!snapshotTime);
   };
 
   const flaggedCount = encounterResult && encounterResult.screeningFlag ? 1 : 0;
+  const syntheticModeActive = objects.length > 0 && objects.every((object) => object.isSynthetic);
+  const displayedPayloads = objects.filter((object) => object.classification === 'PAYLOAD').length;
+  const displayedDebris = objects.filter((object) => object.classification === 'DEBRIS' || object.classification === 'ROCKET BODY').length;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#081322] text-[#F1F5F9] font-sans">
@@ -259,22 +303,35 @@ export default function App() {
               <div className="flex items-center justify-between text-slate-300 font-semibold text-xs">
                 <span className="flex items-center gap-1.5">
                   <Database className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>CelesTrak GP Data</span>
+                  <span>Orbital Data Provenance</span>
                 </span>
                 <button
                   onClick={handleManualDataRefresh}
                   disabled={isRefreshingData}
                   className="p-1 rounded hover:bg-[#1a3350] text-slate-400 hover:text-cyan-400 cursor-pointer"
-                  title="Refresh CelesTrak Ephemeris"
+                  title="Refresh orbital data; uses the small satellite query when debris is already cached"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingData ? 'animate-spin' : ''}`} />
                 </button>
               </div>
 
               <div className="text-[10px] space-y-0.5 text-slate-400 font-mono">
-                <div>Objects: {dataStatus.totalObjects} ({dataStatus.payloadsCount} Sat / {dataStatus.debrisCount} Deb)</div>
-                <div>Cached: {dataStatus.lastFetchedIso.slice(11, 16)} UTC</div>
-                <div>Status: <span className="text-emerald-400 font-semibold">{dataStatus.isStale ? 'Stale' : 'Live Verified'}</span></div>
+                <div>Displayed catalog: {objects.length} ({displayedPayloads} payload / {displayedDebris} debris)</div>
+                <div>Current mode: {dataStatus.liveAccessDisabled ? 'DISABLED by offline mode' : `${dataStatus.satelliteFeed.recordCount} payload / ${dataStatus.debrisFeed.recordCount} debris from current provider cache`}</div>
+                <div className="text-amber-300">Historical analysis: {historicalSnapshotLoaded ? `AVAILABLE · snapshot captured ${dataStatus.lastFetchedIso.slice(0, 16).replace('T', ' ')} UTC` : 'UNAVAILABLE · no verified provider snapshot is loaded.'}</div>
+                <div>Synthetic mode: {syntheticModeActive ? 'ACTIVE' : 'AVAILABLE'} · isolated controlled OMM pair</div>
+                <div>Satellite feed: <span className={dataStatus.satelliteFeed.state === 'current' ? 'text-emerald-300' : 'text-amber-300'}>{dataStatus.satelliteFeed.state.toUpperCase()} · {dataStatus.satelliteFeed.recordCount}</span></div>
+                <div>Debris feed: <span className={dataStatus.debrisFeed.state === 'current' ? 'text-emerald-300' : 'text-amber-300'}>{dataStatus.debrisFeed.state.toUpperCase()} · {dataStatus.debrisFeed.recordCount}</span></div>
+                {dataStatus.satelliteFeed.downloadTimestampIso && <div>Satellite downloaded: {dataStatus.satelliteFeed.downloadTimestampIso.slice(0, 16).replace('T', ' ')} UTC</div>}
+                {dataStatus.debrisFeed.downloadTimestampIso && <div>Debris downloaded: {dataStatus.debrisFeed.downloadTimestampIso.slice(0, 16).replace('T', ' ')} UTC</div>}
+                <div>Satellite epochs: {dataStatus.satelliteFeed.oldestEpochIso ? `${dataStatus.satelliteFeed.oldestEpochIso.slice(0, 10)} → ${dataStatus.satelliteFeed.newestEpochIso.slice(0, 10)} UTC` : 'Unavailable'}</div>
+                <div>Debris epochs: {dataStatus.debrisFeed.oldestEpochIso ? `${dataStatus.debrisFeed.oldestEpochIso.slice(0, 10)} → ${dataStatus.debrisFeed.newestEpochIso.slice(0, 10)} UTC` : 'Unavailable'}</div>
+                <div>Last checked: {dataStatus.lastAttemptIso ? `${dataStatus.lastAttemptIso.slice(0, 16).replace('T', ' ')} UTC` : 'Not checked this session'}</div>
+                <div>Status: <span className={`font-semibold ${dataStatus.isFallback || dataStatus.isStale || dataStatus.satelliteFeed.state !== 'current' || dataStatus.debrisFeed.state !== 'current' || syntheticModeActive ? 'text-amber-300' : 'text-emerald-400'}`}>{syntheticModeActive ? 'Synthetic educational scenario' : dataStatus.provenanceMode === 'historical' ? historicalSnapshotLoaded ? 'Historical provider snapshot' : 'Historical snapshot unavailable' : bothFeedsCurrent ? 'Current satellite + debris feeds' : hasPayloadAndDebris ? 'Both categories available; one or more feeds are cached' : 'Current feed incomplete'}</span></div>
+                {dataStatus.satelliteFeed.responseDetail && <div className="text-amber-300">Satellite response: {dataStatus.satelliteFeed.responseDetail}</div>}
+                {dataStatus.debrisFeed.responseDetail && <div className="text-amber-300">Debris response: {dataStatus.debrisFeed.responseDetail}</div>}
+                {!dataStatus.liveAccessDisabled && dataStatus.lastError && <div className="text-amber-300">Refresh issue: {dataStatus.lastError}</div>}
+                {dataStatus.retryAfterIso && <div>Next retry after: {dataStatus.retryAfterIso.slice(0, 16).replace('T', ' ')} UTC</div>}
               </div>
 
               <div className="text-[9px] text-slate-500 leading-tight border-t border-[#24364B] pt-1">
@@ -316,7 +373,7 @@ export default function App() {
               >
                 {encounterResult.screeningFlag
                   ? `SCREENING FLAG: ${encounterResult.minSeparationKm.toFixed(1)} km`
-                  : `NOMINAL BUFFER: ${encounterResult.minSeparationKm.toFixed(1)} km`}
+                  : `ABOVE EDUCATIONAL SCREEN: ${encounterResult.minSeparationKm.toFixed(1)} km`}
               </span>
             )}
           </div>
@@ -357,28 +414,31 @@ export default function App() {
               activeModule === 'monitor' ? 'lg:flex-[1.2]' : 'lg:flex-[0.9]'
             }`}
           >
-            <EarthViewer
-              objects={objects}
-              selectedObject={selectedObject}
-              onSelectObject={(obj) => {
-                setSelectedObject(obj);
-                if (obj) {
-                  if (obj.classification === 'PAYLOAD') {
-                    setSelectedSatellite(obj);
-                  } else {
-                    setSelectedDebris(obj);
+            <Suspense fallback={<div className="h-full w-full flex items-center justify-center text-cyan-300 text-sm font-mono">Loading interactive Earth…</div>}>
+              <EarthViewer
+                objects={objects}
+                selectedObject={selectedObject}
+                onSelectObject={(obj) => {
+                  setSelectedObject(obj);
+                  if (obj) {
+                    setEncounterResult(null);
+                    if (obj.classification === 'PAYLOAD') {
+                      setSelectedSatellite(obj);
+                    } else if (obj.classification === 'DEBRIS' || obj.classification === 'ROCKET BODY') {
+                      setSelectedDebris(obj);
+                    }
                   }
-                }
-              }}
-              encounterResult={encounterResult}
-              simTime={simTime}
-              onSimTimeChange={setSimTime}
-              isPlaying={isPlaying}
-              onTogglePlay={() => setIsPlaying(!isPlaying)}
-              simSpeedMultiplier={simSpeedMultiplier}
-              onSpeedMultiplierChange={setSimSpeedMultiplier}
-              activeModule={activeModule}
-            />
+                }}
+                encounterResult={encounterResult}
+                simTime={simTime}
+                onSimTimeChange={setSimTime}
+                isPlaying={isPlaying}
+                onTogglePlay={() => setIsPlaying(!isPlaying)}
+                simSpeedMultiplier={simSpeedMultiplier}
+                onSpeedMultiplierChange={setSimSpeedMultiplier}
+                activeModule={activeModule}
+              />
+            </Suspense>
           </div>
 
           {/* Contextual Active Module Panel */}
@@ -403,12 +463,14 @@ export default function App() {
                 objects={objects}
                 selectedSatellite={selectedSatellite}
                 selectedDebris={selectedDebris}
-                onSelectSatellite={setSelectedSatellite}
-                onSelectDebris={setSelectedDebris}
+              onSelectSatellite={(sat) => { setSelectedSatellite(sat); setEncounterResult(null); }}
+                onSelectDebris={(deb) => { setSelectedDebris(deb); setEncounterResult(null); }}
                 encounterResult={encounterResult}
                 onEncounterCalculated={setEncounterResult}
-                onJumpToTime={(dt) => setSimTime(dt)}
+                onJumpToTime={(dt) => { setSimTime(dt); setIsPlaying(false); }}
                 onSwitchToExplainable={() => setActiveModule('explain')}
+                onLoadSyntheticScenario={handleLoadSyntheticScenario}
+                onReturnToCatalog={handleReturnToCatalog}
                 simTime={simTime}
               />
             )}
@@ -435,7 +497,7 @@ export default function App() {
         onClose={() => setIsDemoGuideOpen(false)}
         onNavigateModule={(mod) => setActiveModule(mod)}
         onOpenValidation={() => setIsValidationOpen(true)}
-        onLoadPresetScenario={handleLoadPresetScenario}
+        onLoadScenario={handleLoadSyntheticScenario}
       />
     </div>
   );

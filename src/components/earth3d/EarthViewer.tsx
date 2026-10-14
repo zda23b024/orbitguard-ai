@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   EncounterAnalysisResult,
+  formatObjectIdentifier,
   OrbitalObject,
   PropagatedState,
 } from '../../types/orbital';
@@ -15,6 +16,7 @@ import {
   calculateSeparationKm,
   generateOrbitalTrajectory,
   propagateObject,
+  temeToEcef,
 } from '../../services/orbitalEngine';
 import {
   createProceduralEarthTexture,
@@ -74,6 +76,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
 
   const [controlsCollapsed, setControlsCollapsed] = useState(false);
   const [cameraMode, setCameraMode] = useState<'free' | 'follow'>('free');
+  const [rendererError, setRendererError] = useState<string | null>(null);
 
   // Three.js internal references
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -126,10 +129,15 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     cameraRef.current = camera;
 
     // 3. WebGL Renderer
-    const renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: 'high-performance',
-    });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+      setRendererError(null);
+    } catch (error) {
+      console.error('WebGL globe initialization failed', error);
+      setRendererError('3D Earth is unavailable because WebGL could not be initialized. Use a browser with WebGL enabled.');
+      return;
+    }
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -262,6 +270,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
       if (!container || !cameraRef.current || !rendererRef.current) return;
       const w = container.clientWidth;
       const h = container.clientHeight;
+      if (w <= 0 || h <= 0) return;
       cameraRef.current.aspect = w / h;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
@@ -272,17 +281,8 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
 
     // Render Loop
     let animationFrameId: number;
-    const clock = new THREE.Clock();
-
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-
-      // Earth slow realistic axial spin
-      if (earthMeshRef.current) {
-        earthMeshRef.current.rotation.y += delta * 0.015;
-      }
-
       controls.update();
       renderer.render(scene, camera);
     };
@@ -291,6 +291,17 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     return () => {
       cancelAnimationFrame(animationFrameId);
       resizeObserver.disconnect();
+      controls.dispose();
+      scene.traverse((node) => {
+        const renderable = node as THREE.Mesh;
+        renderable.geometry?.dispose();
+        const materials = Array.isArray(renderable.material) ? renderable.material : renderable.material ? [renderable.material] : [];
+        materials.forEach((material) => {
+          const mapped = material as THREE.Material & { map?: THREE.Texture };
+          mapped.map?.dispose();
+          material.dispose();
+        });
+      });
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
@@ -309,6 +320,10 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
       if (!currentIds.has(id)) {
         scene.remove(val.mesh);
         scene.remove(val.halo);
+        val.mesh.geometry.dispose();
+        (val.mesh.material as THREE.Material).dispose();
+        val.halo.geometry.dispose();
+        (val.halo.material as THREE.Material).dispose();
         markerMeshesRef.current.delete(id);
       }
     });
@@ -317,7 +332,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     objects.forEach((obj) => {
       if (!markerMeshesRef.current.has(obj.id)) {
         const isPayload = obj.classification === 'PAYLOAD';
-        const color = isPayload ? 0x6da8ff : 0xf3b65a; // Cyan for satellites, Amber for debris
+        const color = isPayload ? 0x6da8ff : obj.classification === 'UNKNOWN' ? 0x9eb1c5 : 0xf3b65a;
 
         // Core marker sphere
         const markerGeo = new THREE.SphereGeometry(1.6, 12, 12);
@@ -343,6 +358,10 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         scene.add(halo);
 
         markerMeshesRef.current.set(obj.id, { mesh, halo, obj });
+      } else {
+        const marker = markerMeshesRef.current.get(obj.id)!;
+        marker.obj = obj;
+        marker.mesh.userData = { noradId: obj.id, object: obj };
       }
     });
   }, [objects]);
@@ -359,10 +378,11 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
       const prop = propagateObject(obj, simTime);
       if (prop.valid) {
         mesh.visible = true;
-        // Convert ECI km to Three units
-        const x = prop.positionEci.x * KM_TO_UNITS;
-        const y = prop.positionEci.z * KM_TO_UNITS; // Map ECI Z to Three Y (celestial pole)
-        const z = -prop.positionEci.y * KM_TO_UNITS;
+        // SGP4 gives TEME; rotate it to Earth-fixed coordinates at this same UTC simulation time.
+        const ecef = temeToEcef(prop.positionEci, simTime);
+        const x = ecef.x * KM_TO_UNITS;
+        const y = ecef.z * KM_TO_UNITS;
+        const z = -ecef.y * KM_TO_UNITS;
 
         mesh.position.set(x, y, z);
         halo.position.set(x, y, z);
@@ -440,7 +460,11 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     if (!scene) return;
 
     // Clear existing orbit lines
-    orbitPathLinesRef.current.forEach((line) => scene.remove(line));
+    orbitPathLinesRef.current.forEach((line) => {
+      scene.remove(line);
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    });
     orbitPathLinesRef.current.clear();
 
     const objectsToDrawOrbits: OrbitalObject[] = [];
@@ -463,17 +487,19 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     objectsToDrawOrbits.forEach((obj) => {
       const trajPoints = generateOrbitalTrajectory(obj, simTime, 140);
       if (trajPoints.length > 5) {
-        const threePoints = trajPoints.map((p) => {
+        const threePoints = trajPoints.map((p, i) => {
+          const sampleDate = new Date(simTime.getTime() + (i / (trajPoints.length - 1)) * obj.periodMinutes * 60_000);
+          const ecef = temeToEcef(p, sampleDate);
           return new THREE.Vector3(
-            p.x * KM_TO_UNITS,
-            p.z * KM_TO_UNITS,
-            -p.y * KM_TO_UNITS
+            ecef.x * KM_TO_UNITS,
+            ecef.z * KM_TO_UNITS,
+            -ecef.y * KM_TO_UNITS
           );
         });
 
         const geo = new THREE.BufferGeometry().setFromPoints(threePoints);
         const isPayload = obj.classification === 'PAYLOAD';
-        const color = isPayload ? 0x37c9e8 : 0xf3b65a;
+        const color = isPayload ? 0x37c9e8 : obj.classification === 'UNKNOWN' ? 0x9eb1c5 : 0xf3b65a;
 
         const mat = new THREE.LineBasicMaterial({
           color,
@@ -487,7 +513,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         orbitPathLinesRef.current.set(obj.id, line);
       }
     });
-  }, [selectedObject, encounterResult]);
+  }, [selectedObject, encounterResult, simTime]);
 
   // Raycasting for interactive marker selection and hover
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -568,9 +594,10 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     if (!encounterResult) return;
     const tCaDate = new Date(encounterResult.tCaTimestampMs);
     onSimTimeChange(tCaDate);
+    if (isPlaying) onTogglePlay();
 
     // Position camera near encounter
-    const satPos = encounterResult.satellitePositionEci;
+    const satPos = temeToEcef(encounterResult.satellitePositionEci, tCaDate);
     const x = satPos.x * KM_TO_UNITS;
     const y = satPos.z * KM_TO_UNITS;
     const z = -satPos.y * KM_TO_UNITS;
@@ -598,6 +625,14 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         onPointerMove={handlePointerMove}
         onPointerDown={handlePointerDown}
       />
+      {rendererError && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center p-6 bg-[#081322] text-center">
+          <div className="max-w-md rounded-xl border border-amber-500/40 bg-[#11243A] p-5 text-sm text-slate-200">
+            <AlertTriangle className="mx-auto mb-3 h-7 w-7 text-amber-300" />
+            {rendererError}
+          </div>
+        </div>
+      )}
 
       {/* Top Overlay Badges */}
       <div className="absolute top-4 left-4 z-10 flex flex-wrap items-center gap-2 pointer-events-none">
@@ -610,9 +645,15 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#11243A]/90 border border-[#24364B] shadow-lg backdrop-blur-md">
           <div className="w-2.5 h-2.5 rounded-full bg-[#F3B65A]" />
           <span className="text-xs font-medium text-slate-300">
-            Tracked Debris: {objects.filter((o) => o.classification !== 'PAYLOAD').length}
+            Tracked Debris: {objects.filter((o) => o.classification === 'DEBRIS' || o.classification === 'ROCKET BODY').length}
           </span>
         </div>
+        {objects.some((o) => o.classification === 'UNKNOWN') && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#11243A]/90 border border-[#24364B] shadow-lg backdrop-blur-md">
+            <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />
+            <span className="text-xs font-medium text-slate-300">Unknown: {objects.filter((o) => o.classification === 'UNKNOWN').length}</span>
+          </div>
+        )}
 
         {encounterResult && (
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#11243A]/95 border border-[#EF6464]/60 shadow-lg backdrop-blur-md">
@@ -674,8 +715,8 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
               </span>
             </div>
             <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-slate-300 text-[11px]">
-              <span className="text-slate-400">NORAD ID:</span>
-              <span className="font-mono text-cyan-400">{hoveredObject.obj.noradId}</span>
+              <span className="text-slate-400">Object ID:</span>
+              <span className="font-mono text-cyan-400">{formatObjectIdentifier(hoveredObject.obj)}</span>
               <span className="text-slate-400">Altitude:</span>
               <span className="font-mono text-white">
                 {hoveredObject.prop.geodetic.altitudeKm.toFixed(1)} km
@@ -715,7 +756,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         </div>
 
         {!controlsCollapsed && (
-          <div className="bg-[#11243A]/95 border border-[#24364B] rounded-xl p-3 shadow-2xl backdrop-blur-md flex flex-col gap-2.5">
+          <div className="bg-[#11243A]/95 border border-[#24364B] rounded-xl p-3 shadow-2xl backdrop-blur-md flex flex-col gap-2.5 overflow-y-auto" style={{ maxHeight: 'calc(100% - 3rem)' }}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               {/* Play / Pause & Time readout */}
               <div className="flex items-center gap-2">
@@ -794,7 +835,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
                     {selectedObject.name}
                   </span>
                   <span className="font-mono text-cyan-400">
-                    #{selectedObject.noradId}
+                    {formatObjectIdentifier(selectedObject)}
                   </span>
                   <span className="text-slate-400">
                     ({selectedObject.classification})

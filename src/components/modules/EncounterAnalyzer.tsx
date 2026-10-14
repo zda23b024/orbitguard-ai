@@ -4,8 +4,9 @@
  */
 
 import React, { useState } from 'react';
-import { EncounterAnalysisResult, OrbitalObject } from '../../types/orbital';
+import { EncounterAnalysisResult, formatObjectIdentifier, OrbitalObject } from '../../types/orbital';
 import { analyzeCloseApproach } from '../../services/orbitalEngine';
+import { SYNTHETIC_SCENARIO_THRESHOLD_KM, SYNTHETIC_SCENARIO_WINDOW_HOURS } from '../../services/syntheticScenario';
 import { EncounterChart } from './EncounterChart';
 import {
   AlertTriangle,
@@ -32,6 +33,8 @@ interface EncounterAnalyzerProps {
   onEncounterCalculated: (result: EncounterAnalysisResult) => void;
   onJumpToTime: (date: Date) => void;
   onSwitchToExplainable: () => void;
+  onLoadSyntheticScenario: () => void;
+  onReturnToCatalog: () => void;
   simTime: Date;
 }
 
@@ -45,6 +48,8 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
   onEncounterCalculated,
   onJumpToTime,
   onSwitchToExplainable,
+  onLoadSyntheticScenario,
+  onReturnToCatalog,
   simTime,
 }) => {
   const [timeWindowHours, setTimeWindowHours] = useState<number>(24);
@@ -52,36 +57,24 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
   const [isCalculating, setIsCalculating] = useState<boolean>(false);
 
   const satellites = objects.filter((o) => o.classification === 'PAYLOAD');
-  const debrisList = objects.filter((o) => o.classification !== 'PAYLOAD');
+  const debrisList = objects.filter((o) => o.classification === 'DEBRIS' || o.classification === 'ROCKET BODY');
+  const historicalPayloads = satellites.filter((object) => object.dataMode === 'historical').length;
+  const historicalDebris = debrisList.filter((object) => object.dataMode === 'historical').length;
 
   // Pre-configured scientific demonstration scenarios for competition demo
-  const DEMO_SCENARIOS = [
+  const DEMO_SCENARIOS: { title: string; desc: string; synthetic?: boolean; satNorad?: number; debNorad?: number }[] = [
     {
-      title: 'Sentinel-2A vs Cosmos 2251 Debris',
+      title: 'Sentinel-2A vs COSMOS 2251 Debris',
       satNorad: 40697,
       debNorad: 34454,
-      desc: 'Sun-synchronous Earth observation payload intersecting high-inclination collision fragment shell.',
+      desc: 'Calculated from the selected catalog mode; historical snapshot records are not current orbital data.',
     },
     {
-      title: 'Landsat 9 vs Fengyun 1C Debris',
-      satNorad: 49260,
-      debNorad: 30799,
-      desc: 'LEO 705 km science mission crossing the 2007 ASAT debris cloud.',
-    },
-    {
-      title: 'ISS (Zarya) vs CZ-4B Debris',
-      satNorad: 25544,
-      debNorad: 45119,
-      desc: 'Human-occupied space station orbital screening analysis against discarded upper stage fragment.',
+      title: 'SYNTHETIC EDUCATIONAL CLOSE APPROACH',
+      synthetic: true,
+      desc: 'Controlled orbital elements · 15 km educational screen · not a real conjunction',
     },
   ];
-
-  const handleApplyScenario = (satNorad: number, debNorad: number) => {
-    const s = satellites.find((sat) => sat.noradId === satNorad) || null;
-    const d = debrisList.find((deb) => deb.noradId === debNorad) || null;
-    onSelectSatellite(s);
-    onSelectDebris(d);
-  };
 
   const handleExecuteAnalysis = () => {
     if (!selectedSatellite || !selectedDebris) return;
@@ -117,7 +110,7 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
           <span className="font-mono text-[10px] text-slate-400">MODULE 2</span>
         </div>
         <p className="text-xs text-slate-300 mt-1">
-          Perform rigorous SGP4 propagation and numerical refinement to identify minimum 3D separation, encounter epoch, and relative velocity.
+          Propagate the selected objects with SGP4 and estimate minimum separation, time, and relative velocity for the chosen window.
         </p>
       </div>
 
@@ -128,14 +121,44 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
             <span>Curated Competition Demo Scenarios</span>
           </span>
-          <span className="text-[10px] text-slate-400">Quick-Load Pairings</span>
+          {objects.length > 0 && objects.every((object) => object.isSynthetic) ? (
+            <button onClick={onReturnToCatalog} className="flex items-center gap-1.5 text-[10px] text-cyan-300 hover:text-white" title="Return to the loaded provider or historical catalog">
+              <RotateCcw className="h-3 w-3" />
+              Return to catalog
+            </button>
+          ) : (
+            <span className="text-[10px] text-slate-400">Quick-Load Pairings</span>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-2.5 text-[10px] leading-relaxed text-amber-100 space-y-1">
+          <div>Current-data analysis: {satellites.filter((object) => object.dataMode === 'current').length} payloads and {debrisList.filter((object) => object.dataMode === 'current').length} debris/rocket bodies loaded; a current pair requires both.</div>
+          <div>Historical analysis: {historicalPayloads && historicalDebris ? `${historicalPayloads} payloads and ${historicalDebris} debris objects from a verified local provider snapshot; not current data.` : 'unavailable; no verified provider snapshot is loaded.'}</div>
+          <div>Synthetic analysis: available through the controlled pair below; it is isolated from provider data.</div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           {DEMO_SCENARIOS.map((scen, idx) => (
             <button
               key={idx}
-              onClick={() => handleApplyScenario(scen.satNorad, scen.debNorad)}
+              onClick={() => {
+                if (scen.synthetic) {
+                  setTimeWindowHours(SYNTHETIC_SCENARIO_WINDOW_HOURS);
+                  setThresholdKm(SYNTHETIC_SCENARIO_THRESHOLD_KM);
+                  onLoadSyntheticScenario();
+                } else if (scen.satNorad && scen.debNorad) {
+                  const satellite = satellites.find((object) => object.noradId === scen.satNorad) || null;
+                  const debris = debrisList.find((object) => object.noradId === scen.debNorad) || null;
+                  if (satellite && debris) {
+                    setTimeWindowHours(24);
+                    setThresholdKm(25);
+                    onSelectSatellite(satellite);
+                    onSelectDebris(debris);
+                    const snapshotTime = satellite.snapshotCapturedAtIso || debris.snapshotCapturedAtIso;
+                    onJumpToTime(snapshotTime ? new Date(snapshotTime) : new Date());
+                  }
+                }
+              }}
               className="text-left p-2 rounded-lg bg-[#11243A] hover:bg-[#18314e] border border-[#24364B] hover:border-cyan-400/50 transition cursor-pointer flex flex-col justify-between"
             >
               <div className="font-semibold text-xs text-slate-100 truncate">
@@ -151,12 +174,18 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
 
       {/* Target Selection & Analysis Controls */}
       <div className="p-4 space-y-4 bg-[#11243A]">
+        {(selectedSatellite?.isSynthetic || selectedDebris?.isSynthetic) && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-100">
+            <strong className="mr-1 text-amber-300">SYNTHETIC EDUCATIONAL SCENARIO</strong>
+            Controlled orbital elements; these are not catalog objects or an observed conjunction.
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {/* Satellite Selection */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-[#6DA8FF] flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#6DA8FF]" />
-              <span>Target Operational Satellite</span>
+              <span>Target Payload Satellite</span>
             </label>
             <select
               value={selectedSatellite?.id || ''}
@@ -169,7 +198,7 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
               <option value="">Select Satellite...</option>
               {satellites.map((sat) => (
                 <option key={sat.id} value={sat.id}>
-                  {sat.name} (#{sat.noradId} - {sat.orbitClass})
+                  {sat.name} ({formatObjectIdentifier(sat)} - {sat.orbitClass})
                 </option>
               ))}
             </select>
@@ -192,7 +221,7 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
               <option value="">Select Debris Object...</option>
               {debrisList.map((deb) => (
                 <option key={deb.id} value={deb.id}>
-                  {deb.name} (#{deb.noradId} - {deb.classification})
+                  {deb.name} ({formatObjectIdentifier(deb)} - {deb.classification})
                 </option>
               ))}
             </select>
@@ -223,7 +252,7 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
               ))}
             </div>
             <div className="text-[10px] text-slate-400">
-              Coarse step: 75s (~{Math.round((timeWindowHours * 3600) / 75)} evaluation nodes)
+              Coarse step: 30s (local minima refined numerically)
             </div>
           </div>
 
@@ -294,14 +323,17 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
               <div>
                 <div className="text-xs font-bold uppercase tracking-wider">
                   {encounterResult.screeningFlag
-                    ? 'Screening Flag: Close Proximity Encounter Identified'
+                    ? 'Educational Screen: Estimated Close Approach'
                     : 'Screening Result: Minimum Separation Exceeds Threshold'}
                 </div>
                 <div className="text-[11px] text-slate-300">
                   {encounterResult.screeningFlag
                     ? `Estimated minimum separation of ${encounterResult.minSeparationKm.toFixed(2)} km is within the ${encounterResult.educationalThresholdKm} km screening threshold.`
-                    : `Estimated minimum separation of ${encounterResult.minSeparationKm.toFixed(2)} km maintains safe distance (> ${encounterResult.educationalThresholdKm} km).`}
+                    : `Estimated minimum separation of ${encounterResult.minSeparationKm.toFixed(2)} km is above the ${encounterResult.educationalThresholdKm} km educational screening threshold.`}
                 </div>
+                <p className="text-[11px] text-slate-300 mt-1">
+                  Estimate derived from orbital elements, not a confirmed collision or operational warning.
+                </p>
               </div>
             </div>
 
@@ -313,7 +345,7 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
                     : 'bg-emerald-500 text-slate-900'
                 }`}
               >
-                {encounterResult.screeningFlag ? 'FLAGGED' : 'CLEAR'}
+                {encounterResult.screeningFlag ? 'SCREEN' : 'ABOVE SCREEN'}
               </span>
             </div>
           </div>
@@ -389,7 +421,7 @@ export const EncounterAnalyzer: React.FC<EncounterAnalyzerProps> = ({
               onClick={onSwitchToExplainable}
               className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#37C9E8] hover:bg-[#52d6f2] text-slate-900 font-bold text-xs shadow-md cursor-pointer transition ml-auto"
             >
-              <span>Explain Physical &amp; ML Reasoning</span>
+              <span>Explain the Physics and Screening</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>

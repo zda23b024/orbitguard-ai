@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { OrbitalObject, PropagatedState } from '../../types/orbital';
+import { formatObjectIdentifier, OrbitalObject, PropagatedState } from '../../types/orbital';
 import { propagateObject } from '../../services/orbitalEngine';
 import {
   Search,
@@ -49,7 +49,7 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
       if (!matchesSearch) return false;
 
       if (filterType === 'PAYLOAD') return obj.classification === 'PAYLOAD';
-      if (filterType === 'DEBRIS') return obj.classification !== 'PAYLOAD';
+      if (filterType === 'DEBRIS') return obj.classification === 'DEBRIS' || obj.classification === 'ROCKET BODY';
       return true;
     });
   }, [objects, searchQuery, filterType]);
@@ -61,7 +61,7 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
   }, [selectedObject, simTime]);
 
   const payloadsCount = objects.filter((o) => o.classification === 'PAYLOAD').length;
-  const debrisCount = objects.filter((o) => o.classification !== 'PAYLOAD').length;
+  const debrisCount = objects.filter((o) => o.classification === 'DEBRIS' || o.classification === 'ROCKET BODY').length;
 
   return (
     <div className="flex flex-col h-full bg-[#11243A] text-slate-100 border-r border-[#24364B] overflow-hidden">
@@ -136,6 +136,8 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
                     className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                       selectedObject.classification === 'PAYLOAD'
                         ? 'bg-blue-900/60 text-blue-300'
+                        : selectedObject.classification === 'UNKNOWN'
+                        ? 'bg-slate-700 text-slate-200'
                         : 'bg-amber-900/60 text-amber-300'
                     }`}
                   >
@@ -143,7 +145,7 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
                   </span>
                 </div>
                 <div className="text-xs text-slate-400 font-mono mt-0.5">
-                  NORAD ID: <span className="text-cyan-400">#{selectedObject.noradId}</span> | COSPAR: {selectedObject.intlDes}
+                  ID: <span className="text-cyan-400">{formatObjectIdentifier(selectedObject)}</span> | COSPAR: {selectedObject.intlDes}
                 </div>
               </div>
 
@@ -159,7 +161,7 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
             <div className="space-y-2">
               <div className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider flex items-center gap-1">
                 <Zap className="w-3 h-3" />
-                <span>Real-Time Calculated Values (SGP4 Engine)</span>
+                <span>Estimated Position from Public Orbital Elements (SGP4)</span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs bg-[#081322] p-2 rounded border border-[#24364B]">
                 <div>
@@ -195,7 +197,7 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
             <div className="space-y-1.5">
               <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider flex items-center gap-1">
                 <Info className="w-3 h-3" />
-                <span>Source Orbital Elements (CelesTrak GP)</span>
+                <span>{(selectedObject.dataMode || (selectedObject.isSynthetic ? 'synthetic' : 'historical')).toUpperCase()} SOURCE · {selectedObject.source}</span>
               </div>
               <div className="grid grid-cols-3 gap-1.5 text-[11px] bg-[#0a182b] p-2 rounded border border-[#24364B]">
                 <div>
@@ -217,6 +219,14 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
                 <div>
                   <span className="text-slate-400 block text-[10px]">BSTAR Drag</span>
                   <span className="font-mono text-slate-200">{selectedObject.bstarDrag.toExponential(2)}</span>
+                </div>
+                <div className="col-span-3">
+                  <span className="text-slate-400 block text-[10px]">Element epoch (UTC)</span>
+                  <span className="font-mono text-slate-200">{selectedObject.epoch}</span>
+                </div>
+                <div className="col-span-3">
+                  <span className="text-slate-400 block text-[10px]">Download time (UTC)</span>
+                  <span className="font-mono text-slate-200">{selectedObject.isSynthetic ? 'Generated locally · no provider retrieval' : selectedObject.downloadedAtIso || 'No recorded retrieval time'}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px]">Data Epoch</span>
@@ -242,6 +252,12 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
             Catalog Objects ({filteredObjects.length})
           </div>
 
+          {filteredObjects.length === 0 && (
+            <div className="mx-2 my-3 rounded-lg border border-amber-500/30 bg-amber-950/20 p-3 text-[11px] leading-relaxed text-amber-100">
+              No verified current orbital records are loaded. The bundled historical TLE set failed checksum validation and is unavailable. Load the isolated synthetic scenario from Module 2 to demonstrate the propagation workflow.
+            </div>
+          )}
+
           {filteredObjects.map((obj) => {
             const isSelected = selectedObject?.id === obj.id;
             const isPayload = obj.classification === 'PAYLOAD';
@@ -259,13 +275,13 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div
                     className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                      isPayload ? 'bg-[#6DA8FF]' : 'bg-[#F3B65A]'
+                      isPayload ? 'bg-[#6DA8FF]' : obj.classification === 'UNKNOWN' ? 'bg-slate-400' : 'bg-[#F3B65A]'
                     }`}
                   />
                   <div className="min-w-0">
                     <div className="font-semibold text-xs truncate">{obj.name}</div>
                     <div className="text-[10px] text-slate-400 font-mono">
-                      #{obj.noradId} • {obj.orbitClass} • {obj.perigeeKm.toFixed(0)} km
+                      {formatObjectIdentifier(obj)} • {obj.orbitClass} • {obj.perigeeKm.toFixed(0)} km
                     </div>
                   </div>
                 </div>
@@ -275,10 +291,12 @@ export const OrbitalMonitor: React.FC<OrbitalMonitorProps> = ({
                     className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
                       isPayload
                         ? 'bg-blue-900/60 text-blue-300'
+                        : obj.classification === 'UNKNOWN'
+                        ? 'bg-slate-700 text-slate-200'
                         : 'bg-amber-900/60 text-amber-300'
                     }`}
                   >
-                    {isPayload ? 'SATELLITE' : 'DEBRIS'}
+                    {isPayload ? 'SATELLITE' : obj.classification === 'UNKNOWN' ? 'UNKNOWN' : obj.classification}
                   </span>
                 </div>
               </div>

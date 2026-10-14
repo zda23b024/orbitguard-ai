@@ -23,7 +23,7 @@ interface CompetitionDemoGuideProps {
   onClose: () => void;
   onNavigateModule: (mod: 'monitor' | 'analyzer' | 'explain') => void;
   onOpenValidation: () => void;
-  onLoadPresetScenario: () => void;
+  onLoadScenario: () => void;
 }
 
 export const CompetitionDemoGuide: React.FC<CompetitionDemoGuideProps> = ({
@@ -31,7 +31,7 @@ export const CompetitionDemoGuide: React.FC<CompetitionDemoGuideProps> = ({
   onClose,
   onNavigateModule,
   onOpenValidation,
-  onLoadPresetScenario,
+  onLoadScenario,
 }) => {
   const [currentStep, setCurrentStep] = useState<number>(0);
 
@@ -43,7 +43,7 @@ export const CompetitionDemoGuide: React.FC<CompetitionDemoGuideProps> = ({
       title: 'Problem Statement & Research Question',
       icon: <Award className="w-5 h-5 text-cyan-400" />,
       pitch:
-        '“Distinguished judges of the Zanzibar Astronomy and Space Society: Earth orbit currently holds over 36,000 tracked objects, yet orbital mechanics computation remains inaccessible to students and emerging researchers in East Africa and globally. OrbitGuard AI solves this by combining public CelesTrak TLE ephemerides, full SGP4 analytical propagation, and transparent physics-based explainability into an accessible scientific platform.”',
+        '“Distinguished judges of the Zanzibar Astronomy and Space Society: OrbitGuard AI is an educational tool for exploring public orbital elements, SGP4 propagation, and estimated close approaches. It shows the input data and explains the measurements so students can inspect how an orbital screening calculation works.”',
       actionLabel: 'Explore 3D Orbital Monitor (Next)',
       onAction: () => {
         onNavigateModule('monitor');
@@ -55,10 +55,10 @@ export const CompetitionDemoGuide: React.FC<CompetitionDemoGuideProps> = ({
       title: 'Module 1: Orbital Monitor & 3D Earth',
       icon: <Globe className="w-5 h-5 text-[#6DA8FF]" />,
       pitch:
-        '“Here in Module 1, we observe authentic orbital objects propagated at this exact microsecond using standard SGP4. Satellites like the Sentinel-2A and ISS appear in blue, while catalogued debris clouds—such as the 2009 Cosmos 2251 collision fragments—appear in amber. Notice the smooth orbital trajectories and real-time geodetic coordinate transformations.”',
-      actionLabel: 'Load Encounter Scenario & Open Analyzer',
+        '“The current provider cache contains one payload and no accepted debris records, so a current satellite–debris analysis is unavailable. The bundled historical records failed integrity checks and are disabled. The synthetic teaching mode remains available and is clearly separated from provider data.”',
+      actionLabel: 'Load Synthetic Scenario & Open Analyzer',
       onAction: () => {
-        onLoadPresetScenario();
+        onLoadScenario();
         onNavigateModule('analyzer');
         setCurrentStep(2);
       },
@@ -68,7 +68,7 @@ export const CompetitionDemoGuide: React.FC<CompetitionDemoGuideProps> = ({
       title: 'Module 2: Close-Approach Encounter Analyzer',
       icon: <Crosshair className="w-5 h-5 text-[#EF6464]" />,
       pitch:
-        '“In Module 2, we execute mathematical close-approach screening. For any satellite-debris pair, our engine performs a 75-second coarse Cartesian search followed by golden-section sub-step numerical refinement. In our demonstration scenario, we pinpoint the exact time of closest approach (t_CA), calculate minimum separation down to metres, and compute relative closing velocity.”',
+        '“In Module 2, the synthetic pair is propagated through the same satellite.js SGP4 code and numerical minimum-search method. Its calculated close approach demonstrates the workflow only; these objects and orbital inputs are fictional, not observed.”',
       actionLabel: 'Proceed to Explainable Analysis',
       onAction: () => {
         onNavigateModule('explain');
@@ -77,10 +77,10 @@ export const CompetitionDemoGuide: React.FC<CompetitionDemoGuideProps> = ({
     },
     {
       timeRange: '1:40 – 2:20',
-      title: 'Module 3: Explainable Analysis & ML Prioritization',
+      title: 'Module 3: Explainable Analysis & Screening',
       icon: <Brain className="w-5 h-5 text-purple-400" />,
       pitch:
-        '“Instead of black-box AI, OrbitGuard AI provides explainable physical reasoning: why the encounter was flagged, hypervelocity kinetic energy equivalents (12x TNT equivalent per kg!), and TLE atmospheric drag error growth. Our interpretable ML model uses an additive SHAP-style waterfall to show how separation, relative velocity, and orbit geometry contribute to the screening priority.”',
+        '“OrbitGuard AI explains the estimated separation, relative speed, element age and educational screening threshold. Its hand-weighted priority index is explicitly uncalibrated and is not a collision probability.”',
       actionLabel: 'View Automated Scientific Validation',
       onAction: () => {
         onOpenValidation();
@@ -92,7 +92,7 @@ export const CompetitionDemoGuide: React.FC<CompetitionDemoGuideProps> = ({
       title: 'Automated Scientific Validation Test Suite',
       icon: <ShieldCheck className="w-5 h-5 text-emerald-400" />,
       pitch:
-        '“Scientific integrity is our highest priority. OrbitGuard AI includes an automated benchmark test suite running directly in the browser: verifying SGP4 propagation consistency against published Vallado test vectors, WGS-84 coordinate rotations, metric separation axioms, and optimizer convergence tolerances.”',
+        '“The scientific validation suite checks SGP4 against a published Vallado vector, verifies an OMM input vector, and checks coordinate bounds, separation calculations, and numerical minimum refinement. Passing these checks does not certify the tool for operational collision warnings.”',
       actionLabel: 'Conclude with Scientific Impact',
       onAction: () => {
         setCurrentStep(5);
@@ -103,7 +103,7 @@ export const CompetitionDemoGuide: React.FC<CompetitionDemoGuideProps> = ({
       title: 'Educational & Research Impact',
       icon: <Award className="w-5 h-5 text-amber-400" />,
       pitch:
-        '“By lowering barriers to high-precision orbital mechanics, OrbitGuard AI empowers students at ZASS and emerging space organizations worldwide to independently conduct satellite safety studies and inspire the next generation of space scientists. Thank you.”',
+        '“OrbitGuard AI gives students a way to explore orbital data and learn how close-approach screening works, while making the limits of the result visible. Thank you.”',
       actionLabel: 'Finish Pitch Walkthrough',
       onAction: () => {
         onClose();
