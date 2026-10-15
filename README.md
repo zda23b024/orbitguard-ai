@@ -4,10 +4,10 @@ OrbitGuard AI is a three-module educational prototype for inspecting public orbi
 
 ## Run locally
 
-Requirements: Node.js 22–24 (matching `package.json`) and npm.
+Requirements: Node.js 22–24 (matching `package.json`) and npm 11.21.0.
 
 ```powershell
-npm install --legacy-peer-deps
+npm ci --include=dev --include=optional
 npm run dev
 ```
 
@@ -23,12 +23,13 @@ npm run dev
 
 ## Deploy to Render (offline competition mode)
 
-For any conventional Node.js host, run from the project root and include `server.ts`, `src/`, `data/snapshots/celestrak-gp-20261014T183324Z.json`, `package.json`, `package-lock.json`, and the generated `dist/` in the deployment artifact. Install dependencies with `npm ci --include=dev --legacy-peer-deps`, run `npm run lint` and `npm run build`, then set `NODE_ENV=production`, `ORBITGUARD_OFFLINE_MODE=true`, and `ORBITGUARD_DISABLE_GEMINI=true` and run `npm start`. The server honors `PORT`. A static-only host is insufficient because the API requires Node.js. The bundled snapshot is the durable historical source; the operating-system temporary cache is optional and must not be relied upon for deployment. Include newly created files in the source release before deploying.
+For any conventional Node.js host, run from the project root and include `server.ts`, `src/`, `data/snapshots/celestrak-gp-20261014T183324Z.json`, `package.json`, `package-lock.json`, and the generated `dist/` in the deployment artifact. Install dependencies with `npm ci --include=dev --include=optional`, run `npm run lint` and `npm run build`, then set `NODE_ENV=production`, `ORBITGUARD_OFFLINE_MODE=true`, and `ORBITGUARD_DISABLE_GEMINI=true` and run `npm start`. The server honors `PORT`. A static-only host is insufficient because the API requires Node.js. The bundled snapshot is the durable historical source; the operating-system temporary cache is optional and must not be relied upon for deployment. Include newly created files in the source release before deploying.
 
 `node --import tsx scripts/verify-offline-integration.ts` verifies the real and synthetic calculations and starts/stops two production servers on port 3107 with separate empty temporary caches and outbound fetches disabled. Build first. This check does not replace Chrome/WebGL testing. See [Final integration evidence](docs/FINAL_INTEGRATION.md) for current verification status.
 
 Create a **Web Service** from this repository using the **Node** runtime. Set:
 
+- **npm version:** 11.21.0 (set NPM_VERSION=11.21.0 in Render)
 - **Build command:** `npm run render-build`
 - **Start command:** `npm run render-start`
 - **Health check path:** `/api/health`

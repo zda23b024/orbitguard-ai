@@ -1,0 +1,23 @@
+name: Validate Linux deployment
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.11.0'
+      - run: npm install --global npm@11.21.0
+      - run: npm ci --include=dev --include=optional --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run build
+      - run: node --import tsx scripts/verify-offline-integration.ts
