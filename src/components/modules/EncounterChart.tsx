@@ -18,7 +18,9 @@ export const EncounterChart: React.FC<EncounterChartProps> = ({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const points = encounter.distanceProfile;
+  const points = encounter.distanceProfile.map(p => p.timestampMs === encounter.tCaTimestampMs
+    ? { ...p, distanceKm: encounter.minSeparationKm, relSpeedKmS: encounter.relativeSpeedKmS }
+    : p);
   if (!points || points.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-slate-400 text-sm">
@@ -42,8 +44,10 @@ export const EncounterChart: React.FC<EncounterChartProps> = ({
   const minD = Math.min(...distances);
   const maxD = Math.max(...distances, encounter.educationalThresholdKm * 1.5);
 
+  const firstTime = points[0].timestampMs;
+  const duration = Math.max(1, points[points.length - 1].timestampMs - firstTime);
   const scaleX = (index: number) =>
-    padLeft + (index / (points.length - 1)) * chartW;
+    padLeft + ((points[index].timestampMs - firstTime) / duration) * chartW;
   const scaleY = (val: number) =>
     padTop + chartH - ((val - Math.min(0, minD)) / (maxD - Math.min(0, minD))) * chartH;
 
@@ -56,7 +60,8 @@ export const EncounterChart: React.FC<EncounterChartProps> = ({
   const areaD = `${pathD} L ${scaleX(points.length - 1)} ${padTop + chartH} L ${scaleX(0)} ${padTop + chartH} Z`;
 
   // Find index closest to min separation
-  const minIdx = distances.indexOf(minD);
+  const closestIndex = points.findIndex(point => point.timestampMs === encounter.tCaTimestampMs);
+  const minIdx = closestIndex >= 0 ? closestIndex : distances.indexOf(minD);
   const minX = scaleX(minIdx);
   const minY = scaleY(minD);
 
@@ -81,7 +86,8 @@ export const EncounterChart: React.FC<EncounterChartProps> = ({
       return;
     }
     const ratio = Math.max(0, Math.min(1, relX / chartW));
-    const idx = Math.round(ratio * (points.length - 1));
+    const timestamp = firstTime + ratio * duration;
+    const idx = points.reduce((best, point, i) => Math.abs(point.timestampMs - timestamp) < Math.abs(points[best].timestampMs - timestamp) ? i : best, 0);
     setHoverIndex(idx);
   };
 
@@ -111,10 +117,10 @@ export const EncounterChart: React.FC<EncounterChartProps> = ({
               t: <span className="text-white">{activePoint.timeIso.slice(11, 19)} UTC</span>
             </span>
             <span className="text-slate-400">
-              d: <span className="text-cyan-400 font-bold">{activePoint.distanceKm.toFixed(1)} km</span>
+              d: <span className="text-cyan-400 font-bold">{activePoint.distanceKm.toFixed(3)} km</span>
             </span>
             <span className="text-slate-400">
-              v_rel: <span className="text-amber-400">{activePoint.relSpeedKmS.toFixed(2)} km/s</span>
+              v_rel: <span className="text-amber-400">{activePoint.relSpeedKmS.toFixed(3)} km/s</span>
             </span>
           </div>
         )}
@@ -123,14 +129,18 @@ export const EncounterChart: React.FC<EncounterChartProps> = ({
       {/* SVG Canvas Chart */}
       <div className="relative w-full overflow-hidden bg-[#0a182b] rounded-lg border border-[#24364B] p-1">
         <svg
+          role="img"
+          aria-label={`Calculated separation over time. Minimum ${encounter.minSeparationKm.toFixed(3)} kilometres at ${encounter.tCaIso}`}
           viewBox={`0 0 ${width} ${height}`}
           className="w-full h-auto select-none"
           onMouseMove={handleMouseMove}
           onMouseLeave={() => setHoverIndex(null)}
-          onClick={() => {
-            if (activePoint && onSelectTime) {
-              onSelectTime(new Date(activePoint.timestampMs));
-            }
+          onClick={event => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const ratio = Math.max(0, Math.min(1, (((event.clientX - rect.left) / rect.width) * width - padLeft) / chartW));
+            const timestamp = firstTime + ratio * duration;
+            const point = points.reduce((best, p) => Math.abs(p.timestampMs - timestamp) < Math.abs(best.timestampMs - timestamp) ? p : best);
+            onSelectTime?.(new Date(point.timestampMs));
           }}
           style={{ cursor: onSelectTime ? 'pointer' : 'default' }}
         >
@@ -221,7 +231,7 @@ export const EncounterChart: React.FC<EncounterChartProps> = ({
             fontWeight="bold"
             textAnchor="middle"
           >
-            t_CA: {encounter.minSeparationKm.toFixed(1)} km
+            t_CA: {encounter.minSeparationKm.toFixed(3)} km
           </text>
 
           {/* Active Hover Cursor Line */}

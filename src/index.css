@@ -24,3 +24,82 @@
     background: #37C9E8;
   }
 }
+
+.app-shell { height:100dvh; display:flex; flex-direction:column; background:#081322; }
+.app-header { display:flex; align-items:center; justify-content:space-between; gap:20px; min-height:76px; padding:12px 28px; border-bottom:1px solid #24364b; background:#0b1728; }
+.brand { display:flex; align-items:center; gap:10px; color:#edf6ff; font-size:21px; font-weight:750; white-space:nowrap; letter-spacing:-.6px; }
+.brand svg,.brand b { color:#58d5ee; }
+.app-header nav { display:flex; gap:6px; }
+.app-header nav button { display:flex; align-items:center; justify-content:center; gap:8px; padding:12px 15px; color:#a4b6cd; border-radius:9px; font-size:13px; cursor:pointer; }
+.app-header nav button[aria-current] { background:#17334a; color:#7ee4f3; }
+.validation-button { display:flex; align-items:center; gap:8px; font-size:12px; color:#adc6d8; cursor:pointer; }
+.workspace { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(420px,1fr); min-height:0; flex:1; }
+.earth-panel { position:relative; min-width:0; overflow:hidden; }
+.earth-caption { position:absolute; top:74px; left:20px; right:20px; pointer-events:none; color:#c0d4e8; font-size:10px; letter-spacing:.7px; line-height:1.8; }
+.earth-caption small { color:#829bb4; font-size:10px; letter-spacing:0; }
+.status-dot { display:inline-block; width:6px; height:6px; background:#5dcde4; border-radius:50%; margin-right:8px; }
+.content-panel { overflow:auto; min-width:0; background:#0d1b2d; border-left:1px solid #24364b; }
+.hero { padding:44px 32px 28px; background:radial-gradient(ellipse at top right,#14354888,transparent 70%); }
+.eyebrow { color:#77cfe4; font-size:10px; letter-spacing:2px; font-weight:650; }
+.hero h1 { font-size:clamp(27px,2.8vw,46px); line-height:1.14; letter-spacing:-1.4px; margin:18px 0; font-weight:750; }
+.hero h1 span { color:#80dded; }
+.hero p { max-width:510px; color:#a7b9cf; font-size:14px; line-height:1.8; margin-bottom:24px; }
+.primary-action { display:flex; align-items:center; justify-content:center; gap:12px; padding:14px 20px; border-radius:9px; background:#71d8ea; color:#081b2c; font-weight:750; font-size:14px; cursor:pointer; }
+.primary-action:hover { background:#a3edfa; }
+.secondary-action { display:flex; align-items:center; gap:8px; color:#bdcfe1; margin:18px 0; font-size:12px; text-align:left; cursor:pointer; }
+.hero-note { color:#8b9fb6; max-width:480px; font-size:11px; line-height:1.8; }
+.catalog-heading { display:flex; flex-direction:column; gap:5px; padding:20px 28px; border-block:1px solid #24364b; font-size:13px; color:#cbdced; }
+.catalog-heading small { font-size:11px; color:#879db6; }
+.monitor-wrapper { height:620px; }
+.notice { padding:16px; background:#3b2c18; color:#f1d6a3; font-size:13px; line-height:1.6; }
+.notice button { text-decoration:underline; margin-left:8px; cursor:pointer; }
+.viewer-loading { height:100%; display:flex; align-items:center; justify-content:center; padding:40px; color:#92d6e5; text-align:center; }
+button:disabled { opacity:.5; cursor:not-allowed; }
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible { outline:2px solid #77ddec; outline-offset:3px; }
+.lab-panel { height:auto!important; min-height:100%; overflow:visible!important; }
+.lab-panel > * { flex-shrink:0; }
+.lab-results { order:2; }
+.lab-settings { order:3; }
+.explanation-panel { padding:28px; line-height:1.75; }
+.explanation-panel h2 { font-size:25px; font-weight:700; letter-spacing:-.5px; }
+.explanation-tabs { display:flex; gap:6px; margin:20px 0; border-bottom:1px solid #294057; padding-bottom:10px; }
+.explanation-tabs button { padding:8px 12px; border-radius:7px; font-size:12px; color:#a9bbd0; cursor:pointer; }
+.explanation-tabs button[aria-selected=true] { background:#214056; color:#8ee7f4; }
+.learning-point { margin:20px 0; }
+.learning-point h3 { font-size:14px; color:#dceaf6; font-weight:650; }
+.learning-point p { font-size:13px; color:#a5b8cd; margin-top:5px; }
+.metric-strip { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0; padding:18px; border:1px solid #29445a; border-radius:12px; background:#12283b; }
+.metric-strip strong { display:block; color:#92e3f0; font-size:25px; font-variant-numeric:tabular-nums; }
+.metric-strip small { color:#9bb0c9; font-size:11px; }
+.explanation-panel pre { white-space:pre-wrap; overflow-wrap:anywhere; font-family:inherit; font-size:12px; color:#afc4d8; }
+.explanation-panel details { padding:14px 0; border-top:1px solid #26394f; font-size:13px; color:#aec1d4; }
+.explanation-panel summary { cursor:pointer; color:#d6e9f4; }
+@media(max-width:1000px) {
+ .app-header { padding:12px 16px; flex-wrap:wrap; gap:10px; }
+ .app-header nav { order:3; width:100%; justify-content:center; }
+ .app-header nav button { flex:1; padding:9px 6px; font-size:12px; }
+ .workspace { display:block; overflow:auto; }
+ .earth-panel { height:480px; }
+ .content-panel { overflow:visible; border-left:0; border-top:1px solid #24364b; }
+ .hero { padding:28px 24px; }
+ .hero h1 { font-size:36px; }
+}
+@media(max-width:520px) {
+ .app-header { min-height:104px; }
+ .brand { font-size:19px; }
+ .validation-button span { display:none; }
+ .app-header nav button { font-size:10px; gap:5px; }
+ .app-header nav svg { width:13px; }
+ .earth-panel { height:420px; }
+ .hero h1 { font-size:31px; }
+ .primary-action { width:100%; font-size:13px; }
+ .earth-caption { top:66px; left:12px; right:12px; font-size:9px; }
+ .earth-caption small { font-size:9px; }
+ .explanation-panel { padding:20px; }
+}
+@media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important; } }
+.scenario-options { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:24px 0; }
+.scenario-options button { text-align:left; padding:16px 12px; background:#11263b; border:1px solid #2a4159; border-radius:10px; color:#d1e4f3; font-size:13px; font-weight:650; cursor:pointer; }
+.scenario-options button[aria-pressed=true] { border-color:#63d9e9; background:#163448; }
+.scenario-options small { display:block; margin-top:8px; font-size:10px; font-weight:400; color:#9ab1c8; }
+@media(max-width:520px) { .app-header nav button { font-size:12px; } .earth-caption { top:100px; } .hero { padding-top:24px; } }

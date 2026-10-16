@@ -32,8 +32,16 @@ setHistoricalDemoMode(process.env.ORBITGUARD_OFFLINE_MODE === 'true');
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+// The competition example always uses the committed snapshot, independent of live cache state.
+const demoSnapshot = loadVerifiedProviderSnapshot();
 
 app.use(express.json({ limit: '32kb' }));
+
+app.get('/api/demo/objects', async (_req: Request, res: Response) => {
+  const snapshot = await demoSnapshot;
+  if (!snapshot) { res.status(503).json({ error: 'Bundled historical snapshot unavailable.' }); return; }
+  res.json(snapshot.objects);
+});
 
 async function getCatalog(refreshAll = false) {
   const objects = refreshAll ? await fetchOrbitalObjects() : getCachedOrbitalObjects();
@@ -170,7 +178,8 @@ app.post('/api/encounters/analyze', async (req: Request, res: Response) => {
 app.post('/api/ai/explain', async (req: Request, res: Response) => {
   try {
     const { satelliteId, debrisId, startTime, timeWindowHours = 24, thresholdKm = 25 } = req.body;
-    const objects = [...await getCatalog(), ...createSyntheticEducationalPair()];
+    const catalog = req.body.dataset === 'historical' ? (await demoSnapshot)?.objects || [] : await getCatalog();
+    const objects = [...catalog, ...createSyntheticEducationalPair()];
     const sat = objects.find((o) => o.id === String(satelliteId));
     const deb = objects.find((o) => o.id === String(debrisId));
     const startDate = new Date(startTime);
@@ -192,6 +201,7 @@ app.post('/api/ai/explain', async (req: Request, res: Response) => {
     }
 
     const analysis = analyzeCloseApproach(sat, deb, startDate, timeWindowHours, thresholdKm);
+    const measurements = { minSeparationKm: analysis.minSeparationKm, relativeSpeedKmS: analysis.relativeSpeedKmS, tCaIso: analysis.tCaIso };
     const historicalSnapshot = !sat.isSynthetic && sat.dataMode === 'historical';
     const snapshotCapturedAt = sat.snapshotCapturedAtIso || deb.snapshotCapturedAtIso;
     const summary = [
@@ -211,6 +221,7 @@ app.post('/api/ai/explain', async (req: Request, res: Response) => {
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (process.env.ORBITGUARD_DISABLE_GEMINI === 'true' || !apiKey) {
       res.json({
+        measurements,
         summary,
         explanation: deterministicExplanation,
         source: 'deterministic',
@@ -248,14 +259,14 @@ app.post('/api/ai/explain', async (req: Request, res: Response) => {
       const explanation = response.text?.trim() || '';
       const disallowed = /\d|probab|chance|odds|likelihood|collis|maneuver|safe|risk|danger|threat|avoid|predict|guarantee|certain|priority|score|hazard|warning|urgent|critical|recommend|decision|reliab|accurac|confiden|uncertain|overlap|intersect|impact/i;
       if (!explanation || explanation.length > 600 || disallowed.test(explanation) || /https?:\/\//i.test(explanation)) {
-        res.json({ summary, explanation: deterministicExplanation, source: 'deterministic', fallbackReason: 'response_rejected' });
+        res.json({ measurements, summary, explanation: deterministicExplanation, source: 'deterministic', fallbackReason: 'response_rejected' });
         return;
       }
-      res.json({ summary, explanation, source: 'gemini' });
+      res.json({ measurements, summary, explanation, source: 'gemini' });
     } catch (error) {
       const status = error && typeof error === 'object' && 'status' in error ? error.status : undefined;
       console.warn('Gemini explanation request failed; returning deterministic explanation.', typeof status === 'number' ? status : 'unknown status');
-      res.json({ summary, explanation: deterministicExplanation, source: 'deterministic', fallbackReason: 'request_failed' });
+      res.json({ measurements, summary, explanation: deterministicExplanation, source: 'deterministic', fallbackReason: 'request_failed' });
     }
   } catch (error) {
     res.status(500).json({ error: 'Could not compute a verified explanation from the supplied catalog objects.' });
@@ -282,8 +293,11 @@ async function startServer() {
     if (cachedCatalog) restoreCatalogCache([], cachedCatalog.status);
     const snapshot = await loadVerifiedProviderSnapshot();
     if (snapshot) restoreCatalogCache(snapshot.objects, snapshot.status);
-  } else if (cachedCatalog) {
+  } else if (cachedCatalog?.objects.length) {
     restoreCatalogCache(cachedCatalog.objects, cachedCatalog.status);
+  } else {
+    const snapshot = await demoSnapshot;
+    if (snapshot) restoreCatalogCache(snapshot.objects, snapshot.status);
   }
 
   if (!isProd) {

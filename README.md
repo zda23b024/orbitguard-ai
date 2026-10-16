@@ -65,3 +65,5 @@ Current mode uses only accepted CelesTrak payload records and the separately ret
 See [Architecture](docs/ARCHITECTURE.md), [Scientific Method](docs/SCIENTIFIC_METHOD.md), [Validation Report](docs/VALIDATION_REPORT.md), and [Competition Demo](docs/COMPETITION_DEMO.md).
 
 An optional server-side Gemini explanation is enabled by `GEMINI_API_KEY`. It only adds constrained prose to measurements recomputed by the server; without a key, or when `ORBITGUARD_DISABLE_GEMINI=true`, a deterministic explanation is returned. Gemini is not required for the app's core workflows.
+
+Current two-dashboard competition workflow, test evidence, three-minute script, and deployment checklist: [Competition handoff](docs/COMPETITION_HANDOFF.md).

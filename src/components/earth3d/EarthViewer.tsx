@@ -179,9 +179,11 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
       64,
       64
     );
-    const earthTexture = createProceduralEarthTexture();
+    let earthTexture: THREE.Texture | null = null;
+    try { earthTexture = createProceduralEarthTexture(); } catch { /* A lit blue sphere remains usable without a texture. */ }
     const earthMaterial = new THREE.MeshStandardMaterial({
       map: earthTexture,
+      color: earthTexture ? 0xffffff : 0x226d9c,
       roughness: 0.65,
       metalness: 0.15,
     });
@@ -330,7 +332,8 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     });
 
     // Create markers for objects
-    objects.forEach((obj) => {
+    const visibleObjects = encounterResult ? [encounterResult.satellite, encounterResult.debris] : objects;
+    visibleObjects.forEach((obj) => {
       if (!markerMeshesRef.current.has(obj.id)) {
         const isPayload = obj.classification === 'PAYLOAD';
         const color = isPayload ? 0x6da8ff : obj.classification === 'UNKNOWN' ? 0x9eb1c5 : 0xf3b65a;
@@ -365,7 +368,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         marker.mesh.userData = { noradId: obj.id, object: obj };
       }
     });
-  }, [objects]);
+  }, [objects, encounterResult]);
 
   // Update object positions and encounter visualization according to simTime
   useEffect(() => {
@@ -376,6 +379,9 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
 
     // Propagate each object
     markerMeshesRef.current.forEach(({ mesh, halo, obj }) => {
+      if (encounterResult && obj.id !== encounterResult.satellite.id && obj.id !== encounterResult.debris.id) {
+        mesh.visible = false; halo.visible = false; return;
+      }
       const prop = propagateObject(obj, simTime);
       if (prop.valid) {
         mesh.visible = true;
@@ -468,8 +474,8 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
     });
     orbitPathLinesRef.current.clear();
 
-    const objectsToDrawOrbits: OrbitalObject[] = [];
-    if (selectedObject) objectsToDrawOrbits.push(selectedObject);
+    const objectsToDrawOrbits: OrbitalObject[] = objects.length <= 2 ? [...objects] : [];
+    if (selectedObject && !objectsToDrawOrbits.some(object => object.id === selectedObject.id)) objectsToDrawOrbits.push(selectedObject);
     if (encounterResult) {
       if (
         encounterResult.satellite.id !== selectedObject?.id &&
@@ -514,7 +520,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         orbitPathLinesRef.current.set(obj.id, line);
       }
     });
-  }, [selectedObject, encounterResult, simTime]);
+  }, [objects, selectedObject, encounterResult, simTime]);
 
   // Raycasting for interactive marker selection and hover
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -580,16 +586,31 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
   // Simulation time tick driver
   useEffect(() => {
     if (!isPlaying) return;
-
+    const tick = encounterResult ? 50 : SIMULATION_TICK_INTERVAL_MS;
     const interval = setInterval(() => {
-      const deltaSimMs = SIMULATION_TICK_INTERVAL_MS * simSpeedMultiplier;
-      onSimTimeChange(new Date(simTime.getTime() + deltaSimMs));
-    }, SIMULATION_TICK_INTERVAL_MS);
+      const deltaSimMs = tick * simSpeedMultiplier;
+      const next = simTime.getTime() + deltaSimMs;
+      // The automatic demo pauses exactly at the calculated closest approach.
+      if (encounterResult && simTime.getTime() < encounterResult.tCaTimestampMs && next >= encounterResult.tCaTimestampMs) {
+        onSimTimeChange(new Date(encounterResult.tCaTimestampMs));
+        onTogglePlay();
+      } else onSimTimeChange(new Date(next));
+    }, tick);
 
     return () => clearInterval(interval);
-  }, [isPlaying, simTime, simSpeedMultiplier, onSimTimeChange]);
+  }, [isPlaying, simTime, simSpeedMultiplier, onSimTimeChange, encounterResult, onTogglePlay]);
 
   // Jump camera to encounter
+  useEffect(() => {
+    if (!encounterResult || !controlsRef.current || !cameraRef.current) return;
+    const position = temeToEcef(encounterResult.satellitePositionEci, new Date(encounterResult.tCaTimestampMs));
+    const target = new THREE.Vector3(position.x, position.z, -position.y).multiplyScalar(KM_TO_UNITS);
+    controlsRef.current.target.copy(target);
+    cameraRef.current.position.copy(target.clone().normalize().multiplyScalar(280));
+    setCameraMode('free');
+    setControlsCollapsed(false);
+  }, [encounterResult]);
+
   const handleJumpToEncounter = () => {
     if (!encounterResult) return;
     const tCaDate = new Date(encounterResult.tCaTimestampMs);
@@ -635,7 +656,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
       )}
 
       {/* Top Overlay Badges */}
-      <div className="absolute top-4 left-4 z-10 flex flex-wrap items-center gap-2 pointer-events-none">
+      <div className="absolute top-4 left-4 right-24 z-10 flex flex-wrap items-center gap-2 pointer-events-none">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#11243A]/90 border border-[#24364B] shadow-lg backdrop-blur-md">
           <div className="w-2.5 h-2.5 rounded-full bg-[#6DA8FF]" />
           <span className="text-xs font-medium text-slate-300">
@@ -645,7 +666,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#11243A]/90 border border-[#24364B] shadow-lg backdrop-blur-md">
           <div className="w-2.5 h-2.5 rounded-full bg-[#F3B65A]" />
           <span className="text-xs font-medium text-slate-300">
-            Tracked Debris: {objects.filter((o) => o.classification === 'DEBRIS' || o.classification === 'ROCKET BODY').length}
+            Debris: {objects.filter((o) => o.classification === 'DEBRIS' || o.classification === 'ROCKET BODY').length}
           </span>
         </div>
         {objects.some((o) => o.classification === 'UNKNOWN') && (
@@ -659,7 +680,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#11243A]/95 border border-[#EF6464]/60 shadow-lg backdrop-blur-md">
             <AlertTriangle className="w-3.5 h-3.5 text-[#EF6464]" />
             <span className="text-xs font-semibold text-slate-100">
-              Encounter: {encounterResult.minSeparationKm.toFixed(1)} km
+              {simTime.getTime() === encounterResult.tCaTimestampMs ? 'AT CLOSEST APPROACH' : 'Closest approach'}: {encounterResult.minSeparationKm.toFixed(3)} km
             </span>
           </div>
         )}
@@ -734,7 +755,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
       )}
 
       {/* Ergonomic Collapsible Bottom Control Dock (Per Three.js Constitution) */}
-      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 w-[94%] max-w-3xl pointer-events-none" style={{ height: 'calc(100% - 1rem)' }}>
+      <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 w-[94%] max-w-3xl pointer-events-none">
         {/* Toggle Drawer Button */}
         <div className="flex justify-center -mb-2 pointer-events-auto">
           <button
@@ -756,7 +777,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
         </div>
 
         {!controlsCollapsed && (
-          <div className="bg-[#11243A]/95 border border-[#24364B] rounded-xl p-3 shadow-2xl backdrop-blur-md flex flex-col gap-2.5 overflow-y-auto pointer-events-auto" style={{ maxHeight: 'calc(100% - 2rem)' }}>
+          <div className="bg-[#11243A]/95 border border-[#24364B] rounded-xl p-3 shadow-2xl backdrop-blur-md flex flex-col gap-2.5 overflow-y-auto pointer-events-auto" style={{ maxHeight: '190px' }}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               {/* Play / Pause & Time readout */}
               <div className="flex items-center gap-2">
@@ -807,10 +828,10 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
               {/* Action Buttons */}
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => onSimTimeChange(new Date())}
+                  onClick={() => { onSimTimeChange(new Date(encounterResult?.startTimeIso || selectedObject?.snapshotCapturedAtIso || selectedObject?.epoch || simTime)); if (isPlaying) onTogglePlay(); handleResetCamera(); }}
                   className="px-2.5 py-1.5 rounded-lg bg-[#193352] hover:bg-[#23456c] text-xs text-slate-300 hover:text-white border border-[#24364B] transition cursor-pointer"
                 >
-                  Now (UTC)
+                  Reset simulation
                 </button>
 
                 {encounterResult && (
@@ -820,7 +841,7 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
                     title="Jump simulation time to estimated closest approach"
                   >
                     <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>Jump to t_CA</span>
+                    <span>Focus on Encounter</span>
                   </button>
                 )}
               </div>
@@ -828,8 +849,8 @@ export const EarthViewer: React.FC<EarthViewerProps> = ({
 
             {/* Quick Selected Object Strip */}
             {selectedObject && (
-              <div className="flex items-center justify-between border-t border-[#24364B] pt-2 text-xs">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#24364B] pt-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-slate-400">Focused Object:</span>
                   <span className="font-semibold text-white">
                     {selectedObject.name}

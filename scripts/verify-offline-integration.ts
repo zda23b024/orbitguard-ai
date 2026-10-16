@@ -53,7 +53,7 @@ const request = async (route: string, body?: unknown) => {
 for (let boot = 1; boot <= 2; boot++) {
   const emptyCache = await mkdtemp(path.join(tmpdir(), 'orbitguard-offline-verification-'));
   const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', "globalThis.fetch=async()=>{console.error('OUTBOUND REQUEST BLOCKED');throw new Error('Network disabled during verification');};await import('./server.ts');"], {
-    env: { ...process.env, TMP: emptyCache, TEMP: emptyCache, NODE_ENV: 'production', PORT: String(port), ORBITGUARD_OFFLINE_MODE: 'true', ORBITGUARD_DISABLE_GEMINI: 'true' }, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, TMP: emptyCache, TEMP: emptyCache, ORBITGUARD_CACHE_DIR: emptyCache, NODE_ENV: 'production', PORT: String(port), ORBITGUARD_OFFLINE_MODE: boot === 1 ? 'true' : 'false', ORBITGUARD_DISABLE_GEMINI: 'true' }, stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';
   child.stdout.on('data', (data) => { output += data; });
@@ -67,6 +67,10 @@ for (let boot = 1; boot <= 2; boot++) {
       child.once('exit', (code) => { clearTimeout(timer); reject(new Error(`Server exited ${code}: ${output}`)); });
     });
     const catalog = await (await request('/api/objects')).json();
+    const demoCatalog = await (await request('/api/demo/objects')).json();
+    assert.equal(demoCatalog.length, 2676);
+    assert.ok(demoCatalog.every((o: any) => o.dataMode === 'historical'));
+    assert.ok(demoCatalog.some((o: any) => o.noradId === 31946));
     assert.equal(catalog.length, 2676);
     assert.ok(catalog.every((o: any) => o.dataMode === 'historical'));
     const status = await (await request('/api/data/status')).json();
@@ -75,21 +79,30 @@ for (let boot = 1; boot <= 2; boot++) {
     const apiResult = await (await request('/api/encounters/analyze', body)).json();
     assert.equal(apiResult.minSeparationKm, result.minSeparationKm);
     assert.equal(apiResult.tCaIso, result.tCaIso);
-    const explanation = await (await request('/api/ai/explain', body)).json();
+    const explanation = await (await request('/api/ai/explain', { ...body, dataset: 'historical' })).json();
     assert.equal(explanation.source, 'deterministic');
     assert.equal(explanation.fallbackReason, 'disabled');
+    assert.equal(explanation.measurements.minSeparationKm, result.minSeparationKm);
+    assert.equal(explanation.measurements.relativeSpeedKmS, result.relativeSpeedKmS);
+    assert.equal(explanation.measurements.tCaIso, result.tCaIso);
     assert.ok(explanation.summary.includes(`${result.minSeparationKm.toFixed(3)} km`));
     assert.match(explanation.summary, /historical/);
     const syntheticExplanation = await (await request('/api/ai/explain', { satelliteId: synthetic[0].id, debrisId: synthetic[1].id, startTime: SYNTHETIC_SCENARIO_START, timeWindowHours: SYNTHETIC_SCENARIO_WINDOW_HOURS, thresholdKm: SYNTHETIC_SCENARIO_THRESHOLD_KM })).json();
     assert.equal(syntheticExplanation.source, 'deterministic');
     assert.match(syntheticExplanation.summary, /synthetic/);
+    assert.equal(syntheticExplanation.measurements.minSeparationKm, syntheticResult.minSeparationKm);
+    for (const invalid of [{ ...body, startTime: 'invalid' }, { ...body, timeWindowHours: -1 }, { ...body, satelliteId: 'missing' }, { ...body, satelliteId: synthetic[0].id }]) {
+      const response = await fetch(base + '/api/ai/explain', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(invalid), signal: AbortSignal.timeout(5000) });
+      assert.equal(response.status, 400);
+      assert.equal(typeof (await response.json()).error, 'string');
+    }
     assert.equal((await (await request('/api/validation')).json()).failed, 0);
     const html = await (await request('/')).text();
     const asset = html.match(/src="([^"]+\/assets\/[^\"]+|\/assets\/[^\"]+)"/)?.[1];
     assert.ok(asset, 'production HTML references built JavaScript');
     await request(asset);
     assert.ok(!output.includes('OUTBOUND REQUEST BLOCKED'), output);
-    console.log(`PASS production boot ${boot}: empty temp cache, 2676 historical objects, encounter, deterministic real/synthetic explanations, validation, HTML and JS; zero outbound fetch attempts`);
+    console.log(`PASS production boot ${boot} (offline mode ${boot === 1}): empty cache, 2676 historical objects, demo endpoint, encounter, matching real/synthetic explanations, invalid request handling, validation, HTML and JS; zero outbound fetch attempts`);
   } finally {
     clearTimeout(deadline);
     if (child.exitCode === null) {

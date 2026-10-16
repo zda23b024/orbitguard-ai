@@ -1,393 +1,63 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useEffect, useState } from 'react';
 import { EncounterAnalysisResult, formatObjectIdentifier } from '../../types/orbital';
-import {
-  HelpCircle,
-  ShieldAlert,
-  Zap,
-  Activity,
-  Calendar,
-  AlertTriangle,
-  Brain,
-  Layers,
-  Sparkles,
-  CheckCircle2,
-  FileText,
-  Clock,
-  Compass,
-} from 'lucide-react';
+import { Brain, ArrowRight } from 'lucide-react';
 
-interface ExplainableAnalysisProps {
-  encounter: EncounterAnalysisResult | null;
-  onNavigateToAnalyzer: () => void;
-}
-
-export const ExplainableAnalysis: React.FC<ExplainableAnalysisProps> = ({
-  encounter,
-  onNavigateToAnalyzer,
-}) => {
-  const [activeTab, setActiveTab] = useState<'PHYSICS' | 'SCREENING' | 'BRIEFING'>('PHYSICS');
-  const [briefing, setBriefing] = useState<string | null>(null);
-  const [briefingSource, setBriefingSource] = useState<'gemini' | 'deterministic' | 'local' | null>(null);
-  const [briefingStatus, setBriefingStatus] = useState<string | null>(null);
-  const [isGeneratingBriefing, setIsGeneratingBriefing] = useState(false);
-
+interface Props { encounter: EncounterAnalysisResult | null; onNavigateToAnalyzer: () => void; }
+export const ExplainableAnalysis: React.FC<Props> = ({ encounter, onNavigateToAnalyzer }) => {
+  const [tab, setTab] = useState<'student' | 'technical'>('student');
+  const [wording, setWording] = useState('');
+  const [source, setSource] = useState<'gemini' | 'deterministic'>('deterministic');
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    setBriefing(null);
-    setBriefingSource(null);
-    setBriefingStatus(null);
-  }, [encounter?.calculatedAtIso]);
-
-  if (!encounter) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full p-8 text-center bg-[#11243A] text-slate-400 space-y-3">
-        <HelpCircle className="w-10 h-10 text-slate-500" />
-        <div className="text-sm font-semibold text-slate-200">
-          No Encounter Selected for Explainable Analysis
-        </div>
-        <p className="text-xs max-w-md text-slate-400">
-          Run a close-approach analysis in Module 2 first to inspect the calculated separation, relative speed, and educational screening details.
-        </p>
-        <button
-          onClick={onNavigateToAnalyzer}
-          className="mt-2 px-4 py-2 bg-[#37C9E8] hover:bg-[#4ed5f2] text-slate-900 font-bold text-xs rounded-lg transition cursor-pointer shadow-md"
-        >
-          Go to Encounter Analyzer
-        </button>
-      </div>
-    );
-  }
-
-  // Calculated physics metrics for explanations
-  const kePerKg = encounter.kineticEnergyMjPerKg; // MJ/kg
-  const tntRatio = (kePerKg / 4.184).toFixed(1); // 1 kg of TNT = 4.184 MJ
-  const buildLocalSummary = () =>
-      `SCIENTIFIC SCREENING SUMMARY\n\n` +
-      `OBJECTS: ${encounter.satellite.name} (${formatObjectIdentifier(encounter.satellite)}) and ${encounter.debris.name} (${formatObjectIdentifier(encounter.debris)})\n` +
-      `${encounter.satellite.isSynthetic || encounter.debris.isSynthetic ? 'SCENARIO: Synthetic controlled-orbit demonstration; not an observed conjunction or real-world warning.\n' : ''}` +
-      `ELEMENT EPOCHS: ${encounter.satellite.epoch} UTC; ${encounter.debris.epoch} UTC\n` +
-      `ESTIMATED CLOSEST APPROACH: ${encounter.tCaIso} UTC\n` +
-      `ESTIMATED SEPARATION: ${encounter.minSeparationKm.toFixed(3)} km\n` +
-      `RELATIVE SPEED: ${encounter.relativeSpeedKmS.toFixed(3)} km/s\n` +
-      `EDUCATIONAL SCREEN: ${encounter.educationalThresholdKm} km; ${encounter.screeningFlag ? 'estimated separation is within the screen' : 'estimated separation is outside the screen'}\n\n` +
-      `LIMITATIONS: Values are propagated from the listed public orbital elements. Their ages are ${encounter.dataFreshnessHours.satellite} h and ${encounter.dataFreshnessHours.debris} h at calculation time. This application does not calculate uncertainty or collision probability; the priority index is an uncalibrated educational heuristic.`;
-
-  const handleGenerateBriefing = async () => {
-    setIsGeneratingBriefing(true);
-    try {
-      const response = await fetch('/api/ai/explain', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          satelliteId: encounter.satellite.id,
-          debrisId: encounter.debris.id,
-          startTime: encounter.startTimeIso,
-          timeWindowHours: encounter.timeWindowHours,
-          thresholdKm: encounter.educationalThresholdKm,
-        }),
-      });
-      if (!response.ok) throw new Error(`Explanation request failed (${response.status}).`);
-      const result = await response.json() as {
-        summary: string;
-        explanation: string;
-        source: 'gemini' | 'deterministic';
-        fallbackReason?: 'disabled' | 'not_configured' | 'request_failed' | 'response_rejected';
-      };
-      setBriefing(`${result.summary}\n\nEXPLANATION (${result.source === 'gemini' ? 'Gemini language only' : 'deterministic fallback'})\n${result.explanation}`);
-      setBriefingSource(result.source);
-      setBriefingStatus(result.source === 'gemini'
-        ? 'Gemini wording · measurements computed by SGP4'
-        : result.fallbackReason === 'request_failed'
-          ? 'Gemini unavailable · deterministic explanation shown'
-          : result.fallbackReason === 'response_rejected'
-            ? 'Gemini wording rejected · deterministic explanation shown'
-            : result.fallbackReason === 'disabled'
-              ? 'Gemini disabled · deterministic explanation shown'
-              : result.fallbackReason === 'not_configured'
-                ? 'Gemini key not configured · deterministic explanation shown'
-                : 'Deterministic explanation shown');
-    } catch {
-      setBriefing(`${buildLocalSummary()}\n\nEXPLANATION (local fallback)\nThe closest point and relative speed are computed from propagated states in the selected window. The configured threshold is educational only; the application does not quantify uncertainty or provide operational guidance.`);
-      setBriefingSource('local');
-      setBriefingStatus('Explanation service unavailable · local deterministic wording shown');
-    } finally {
-      setIsGeneratingBriefing(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full bg-[#11243A] text-slate-100 overflow-y-auto divide-y divide-[#24364B]">
-      {/* Module Header */}
-      <div className="p-4 bg-[#0c1a2c]">
-        <div className="flex items-center justify-between">
-          <div className="text-xs uppercase tracking-wider text-cyan-400 font-semibold flex items-center gap-1.5">
-            <Brain className="w-4 h-4 text-cyan-400" />
-            <span>Explainable Scientific Analysis</span>
-          </div>
-          <span className="font-mono text-[10px] text-slate-400">MODULE 3</span>
-        </div>
-        <p className="text-xs text-slate-300 mt-1">
-          Physical explanation of the estimated encounter, screening threshold, element age, and data limitations.
-        </p>
-
-        {/* Tab Switcher */}
-        <div className="flex gap-2 mt-3 bg-[#081322] p-1 rounded-lg border border-[#24364B]">
-          <button
-            onClick={() => setActiveTab('PHYSICS')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded cursor-pointer transition flex items-center justify-center gap-1.5 ${
-              activeTab === 'PHYSICS'
-                ? 'bg-[#1b3554] text-cyan-300 shadow-sm border border-cyan-500/30'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>Physical Principles</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('SCREENING')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded cursor-pointer transition flex items-center justify-center gap-1.5 ${
-              activeTab === 'SCREENING'
-                ? 'bg-[#1b3554] text-cyan-300 shadow-sm border border-cyan-500/30'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Brain className="w-3.5 h-3.5" />
-            <span>Screening Details</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('BRIEFING')}
-            className={`flex-1 py-1.5 text-xs font-semibold rounded cursor-pointer transition flex items-center justify-center gap-1.5 ${
-              activeTab === 'BRIEFING'
-                ? 'bg-[#1b3554] text-cyan-300 shadow-sm border border-cyan-500/30'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            <span>Judges&apos; Scientific Brief</span>
-          </button>
-        </div>
-      </div>
-
-      {/* TAB 1: PHYSICAL PRINCIPLES EXPLANATION */}
-      {activeTab === 'PHYSICS' && (
-        <div className="p-4 space-y-4">
-          {/* Card 1: Screening Decision */}
-          <div className="bg-[#0e1d30] p-3.5 rounded-lg border border-[#24364B] space-y-2">
-            <div className="flex items-center gap-2 text-cyan-400 text-xs font-bold uppercase tracking-wider">
-              <ShieldAlert className="w-4 h-4 text-[#37C9E8]" />
-              <span>1. Screening Result and Interpretation</span>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              The analysis identified an estimated minimum separation of{' '}
-              <strong className="text-white font-mono">{encounter.minSeparationKm.toFixed(2)} km</strong>, which is{' '}
-              {encounter.screeningFlag ? (
-                <span className="text-[#EF6464] font-semibold">
-                  within the configurable {encounter.educationalThresholdKm} km screening threshold
-                </span>
-              ) : (
-                <span className="text-emerald-400 font-semibold">
-                  beyond the {encounter.educationalThresholdKm} km screening threshold
-                </span>
-              )}
-              This user-configured threshold is an educational screen, not an operational flight-safety threshold.
-            </p>
-            <div className="bg-[#081322] p-2.5 rounded border border-[#24364B] text-[11px] text-slate-400 space-y-1">
-              <div className="font-semibold text-slate-300">Crucial Scientific Distinction:</div>
-              <div>
-                • <strong className="text-slate-200">Screening Flag &ne; Guaranteed Collision</strong>: This is an educational screening flag to warrant deeper investigation.
-              </div>
-              <div>
-                • The public orbital elements used in this calculation do not provide positional covariance. This application therefore cannot calculate collision probability (<em className="text-cyan-300">P_c</em>).
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: Hypervelocity Physics & Kinetic Energy */}
-          <div className="bg-[#0e1d30] p-3.5 rounded-lg border border-[#24364B] space-y-2">
-            <div className="flex items-center gap-2 text-amber-400 text-xs font-bold uppercase tracking-wider">
-              <Zap className="w-4 h-4 text-[#F3B65A]" />
-              <span>2. Relative Speed &amp; Hypervelocity Impact Dynamics</span>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              The relative velocity at closest approach is{' '}
-              <strong className="text-white font-mono">{encounter.relativeSpeedKmS.toFixed(2)} km/s</strong> (approx.{' '}
-              <span className="text-amber-300 font-mono">{(encounter.relativeSpeedKmS * 3600).toLocaleString()} km/h</span>).
-              In orbital mechanics, kinetic energy scales quadratically with speed (<em className="font-mono text-cyan-300">E_k = &frac12; m v_rel&sup2;</em>).
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs bg-[#081322] p-2.5 rounded border border-[#24364B]">
-              <div>
-                <span className="text-slate-400 text-[10px] block">Specific Kinetic Energy</span>
-                <span className="font-mono text-white font-bold text-sm">
-                  {kePerKg.toFixed(1)} MJ / kg
-                </span>
-                <span className="text-[10px] text-amber-400 block mt-0.5">
-                  &asymp; {tntRatio}&times; the specific energy of TNT (energy comparison only)
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 text-[10px] block">Interpretation</span>
-                <span className="text-[11px] text-slate-300 block mt-0.5">Energy per unit mass does not predict damage without object mass, shape, material, and impact geometry.</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Data Freshness & Ephemeris Degradation */}
-          <div className="bg-[#0e1d30] p-3.5 rounded-lg border border-[#24364B] space-y-2">
-            <div className="flex items-center gap-2 text-cyan-300 text-xs font-bold uppercase tracking-wider">
-              <Clock className="w-4 h-4 text-cyan-400" />
-              <span>3. Data Epoch Age &amp; Uncertainty Limits</span>
-            </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              The propagation uses public orbital elements and SGP4. This prototype does not calculate covariance or a position-error bound from element age.
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-xs bg-[#081322] p-2 rounded border border-[#24364B]">
-              <div>
-                <span className="text-slate-400 text-[10px] block">{encounter.satellite.name} Age</span>
-                <span className="font-mono text-cyan-300 font-bold">
-                  {encounter.dataFreshnessHours.satellite} Hours Old
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 text-[10px] block">{encounter.debris.name} Age</span>
-                <span className="font-mono text-amber-300 font-bold">
-                  {encounter.dataFreshnessHours.debris} Hours Old
-                </span>
-              </div>
-            </div>
-            <div className="text-[11px] text-slate-400">
-              An older epoch means a longer extrapolation interval. This prototype does not calculate an uncertainty bound; do not use it to make operational maneuver decisions.
-            </div>
-          </div>
-        </div>
-      )}
-
-          {/* TAB 2: EDUCATIONAL SCREENING HEURISTIC */}
-      {activeTab === 'SCREENING' && (
-        <div className="p-4 space-y-4">
-          {/* Educational heuristic score */}
-          <div className="bg-[#0e1d30] p-4 rounded-lg border border-[#24364B] space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-[10px] uppercase font-bold text-cyan-400 tracking-wider block">
-                  Educational Screening Index
-                </span>
-                <div className="text-sm font-bold text-white mt-0.5">
-                  Uncalibrated heuristic priority score; not a collision probability
-                </div>
-              </div>
-              <div className="text-right">
-                <span className="text-2xl font-black font-mono text-cyan-400">
-                  {encounter.educationalScreening.priorityIndex}/100
-                </span>
-                <span className="text-[10px] block text-slate-400">Priority Score</span>
-              </div>
-            </div>
-
-            <div className="p-2.5 rounded bg-[#081322] border border-[#24364B] text-xs text-slate-300">
-              <strong className="text-white">Screening rationale:</strong>{' '}
-              {encounter.educationalScreening.explanation}
-            </div>
-
-            <div className="text-[10px] text-slate-400 border-t border-[#24364B] pt-2 flex items-center justify-between">
-              <span>Hand-weighted physics and data-age rules</span>
-              <span className="text-cyan-400">Uncalibrated heuristic</span>
-            </div>
-          </div>
-
-          {/* Feature Contribution Breakdown (Explainability Waterfall) */}
-          <div className="space-y-2">
-            <div className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Rule contribution breakdown</span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Contributions show how the documented heuristic changes its ranking. They are not trained feature attributions or collision probabilities.
-            </p>
-
-            <div className="space-y-2">
-              {encounter.educationalScreening.featureContributions.map((fc, idx) => {
-                const isPositive = fc.impactWeight >= 0;
-                return (
-                  <div
-                    key={idx}
-                    className="bg-[#0a182b] p-2.5 rounded-lg border border-[#24364B] space-y-1"
-                  >
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-200">{fc.label}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-slate-300 text-[11px]">{fc.value}</span>
-                        <span
-                          className={`font-mono font-bold text-xs px-1.5 py-0.5 rounded ${
-                            isPositive
-                              ? 'bg-[#EF6464]/20 text-[#EF6464]'
-                              : 'bg-emerald-950/40 text-emerald-400'
-                          }`}
-                        >
-                          {isPositive ? `+${fc.impactWeight.toFixed(2)}` : fc.impactWeight.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="text-[11px] text-slate-400">{fc.description}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Scientific Honesty Notice */}
-          <div className="p-3 bg-[#081322] rounded-lg border border-[#24364B] text-[11px] text-slate-400 space-y-1">
-            <div className="font-bold text-amber-400 flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              <span>Scientific Transparency Requirement:</span>
-            </div>
-            <div>
-              This manually weighted educational index is not trained or calibrated against conjunction outcomes. Use the measured separation and element ages directly; this index does not estimate collision probability.
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 3: JUDGES' SCIENTIFIC BRIEF */}
-      {activeTab === 'BRIEFING' && (
-        <div className="p-4 space-y-4">
-          <div className="bg-[#0e1d30] p-3.5 rounded-lg border border-[#24364B] space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-xs uppercase font-bold text-cyan-400 tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-cyan-400" />
-                <span>Scientific Screening Summary</span>
-                {briefingStatus && <span className="ml-2 text-[9px] text-slate-400">{briefingStatus}</span>}
-              </div>
-              <button
-                onClick={handleGenerateBriefing}
-                disabled={isGeneratingBriefing}
-                className="flex items-center gap-1.5 px-3 py-1 bg-[#37C9E8] hover:bg-[#52d2ed] text-slate-900 font-bold text-xs rounded transition cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{isGeneratingBriefing ? 'Preparing…' : 'Generate Summary'}</span>
-              </button>
-            </div>
-
-            <div className="bg-[#081322] p-3 rounded-lg border border-[#24364B] font-mono text-xs text-slate-200 whitespace-pre-wrap leading-relaxed max-h-[380px] overflow-y-auto">
-              {briefing || (
-                `SCIENTIFIC SCREENING SUMMARY — ZASS 2026\n\n` +
-                `TARGET SATELLITE:    ${encounter.satellite.name} (${formatObjectIdentifier(encounter.satellite)})\n` +
-                `CHALLENGER DEBRIS:   ${encounter.debris.name} (${formatObjectIdentifier(encounter.debris)})\n` +
-                `ESTIMATED ENCOUNTER: ${encounter.tCaIso} UTC\n` +
-                `MINIMUM SEPARATION:  ${encounter.minSeparationKm.toFixed(3)} km\n` +
-                `RELATIVE VELOCITY:   ${encounter.relativeSpeedKmS.toFixed(3)} km/s (${(encounter.relativeSpeedKmS * 3600).toFixed(0)} km/h)\n` +
-                `CROSSING ANGLE:      ${encounter.approachAngleDeg.toFixed(1)} deg\n` +
-                `KINETIC ENERGY PER MASS: ${encounter.kineticEnergyMjPerKg.toFixed(1)} MJ/kg\n` +
-                `SCREENING STATUS:    ${encounter.screeningFlag ? 'WITHIN EDUCATIONAL THRESHOLD (< ' + encounter.educationalThresholdKm + ' km)' : 'ABOVE EDUCATIONAL THRESHOLD'}\n\n` +
-                `Element epochs: ${encounter.satellite.epoch} and ${encounter.debris.epoch}. This analysis does not calculate collision probability; public orbital elements do not provide covariance in this application.`
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    if (!encounter) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    let active = true;
+    setWording(''); setSource('deterministic'); setBusy(true);
+    setStatus('Asking Gemini to explain the verified result. Built-in explanations remain available below.');
+    void (async () => {
+      try {
+        const response = await fetch('/api/ai/explain', {
+          method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ satelliteId: encounter.satellite.id, debrisId: encounter.debris.id, startTime: encounter.startTimeIso, timeWindowHours: encounter.timeWindowHours, thresholdKm: encounter.educationalThresholdKm, dataset: encounter.satellite.dataMode === 'historical' ? 'historical' : undefined }),
+        });
+        if (!response.ok) throw new Error('Explanation service unavailable');
+        const data = await response.json();
+        if (!active) return;
+        if (data.measurements?.minSeparationKm !== encounter.minSeparationKm || data.measurements?.relativeSpeedKmS !== encounter.relativeSpeedKmS || data.measurements?.tCaIso !== encounter.tCaIso) throw new Error('The server result differs from the displayed calculation');
+        if (typeof data.explanation !== 'string' || !['gemini', 'deterministic'].includes(data.source)) throw new Error('Invalid explanation response');
+        setSource(data.source); setWording(data.explanation);
+        setStatus(data.source === 'gemini' ? 'AI-generated explanation · Gemini wording; SGP4 measurements' : `Built-in scientific explanation · ${data.fallbackReason === 'disabled' ? 'Gemini disabled' : data.fallbackReason === 'not_configured' ? 'Gemini not configured' : data.fallbackReason === 'response_rejected' ? 'AI wording did not pass the scientific safeguards' : 'Gemini temporarily unavailable'}`);
+      } catch {
+        if (active) { setSource('deterministic'); setStatus('Built-in scientific explanation · AI service unavailable or result mismatch'); }
+      } finally { clearTimeout(timer); if (active) setBusy(false); }
+    })();
+    return () => { active = false; clearTimeout(timer); controller.abort(); };
+  }, [encounter, retry]);
+  if (!encounter) return <div className="explanation-panel"><Brain className="text-cyan-300 mb-4"/><h2>Every explanation starts with a calculation.</h2><p className="text-slate-400 text-sm my-5">Launch a demonstration in the Close-Approach Analysis, then choose Explain with AI.</p><button className="primary-action" onClick={onNavigateToAnalyzer}>Open Close-Approach Analysis <ArrowRight size={16}/></button></div>;
+  const e = encounter;
+  const simulated = Boolean(e.satellite.isSynthetic);
+  const points = [
+    ['Meet the objects', simulated ? 'These are two invented teaching objects: a satellite and a debris fragment. Their controlled orbital elements go through the same SGP4 physics engine as real records.' : `${e.satellite.name} is the selected payload satellite. ${e.debris.name} is a cataloged debris fragment. This example uses stored CelesTrak orbital elements, not current measurements.`],
+    ['Two paths around Earth', 'The blue path belongs to the satellite and the orange path to the debris. SGP4 estimates where each object moves from its orbital elements. The paths and markers are calculated positions, not direct observations.'],
+    ['What does minimum separation mean?', `During the selected ${e.timeWindowHours}-hour window, the closest distance found between the modeled positions is ${e.minSeparationKm.toFixed(3)} km. This happens at ${e.tCaIso}. A smaller distance means a closer modeled approach, not a measured collision probability.`],
+    ['What does relative speed mean?', `The relative speed at that instant is ${e.relativeSpeedKmS.toFixed(3)} km/s. It describes how fast the objects move relative to each other, using the difference of their velocity vectors. It is not either object's individual speed around Earth.`],
+    ['A close approach is not a collision', `The ${e.educationalThresholdKm} km threshold is an educational screen. Crossing it only highlights an estimated close approach. Orbital uncertainty and object dimensions would also be needed for an operational assessment; this app does not calculate collision probability.`],
+    ['Why this matters on Earth', 'Satellites support weather forecasts, communications, navigation, and Earth observation. Understanding the space environment helps students see why these services depend on responsible satellite operations.'],
+    ['What we can conclude', simulated ? 'We can explore how these synthetic inputs produce a close approach. This is not a real event or an operational warning.' : 'We can reproduce a modeled historical approach from the stored elements. We cannot conclude that the objects collided, are currently close, or require a maneuver.'],
+  ];
+  return <div className="explanation-panel">
+    <span className="eyebrow">PHYSICS CALCULATES. AI EXPLAINS.</span><h2 className="mt-3">Understand this encounter</h2>
+    <div className="metric-strip"><div><strong>{e.minSeparationKm.toFixed(3)} km</strong><small>Modeled minimum separation</small></div><div><strong>{e.relativeSpeedKmS.toFixed(3)} km/s</strong><small>Relative speed at closest approach</small></div></div>
+    <div className="rounded-xl border border-cyan-800/50 bg-cyan-950/20 p-4" aria-live="polite"><p className="text-xs text-cyan-200 font-semibold">{busy ? 'Requesting AI wording…' : source === 'gemini' ? 'AI-generated explanation' : 'Built-in scientific explanation'}</p><p className="text-xs text-slate-400 mt-2">{status}</p>{wording && <p className="text-sm text-slate-200 mt-3">{wording}</p>}<button className="secondary-action mb-0" disabled={busy} onClick={() => setRetry(r => r + 1)}>Retry AI explanation</button></div>
+    <div className="explanation-tabs" role="tablist" aria-label="Explanation level"><button role="tab" aria-selected={tab === 'student'} onClick={() => setTab('student')}>For students</button><button role="tab" aria-selected={tab === 'technical'} onClick={() => setTab('technical')}>For judges · technical</button></div>
+    {tab === 'student' ? <div role="tabpanel">{points.map(([title, text]) => <section className="learning-point" key={title}><h3>{title}</h3><p>{text}</p></section>)}<details><summary>Why do the markers look much larger than real objects?</summary><p className="mt-3">They are enlarged so you can find them. Use the numerical distance and chart for separation; marker size and overlap do not represent physical object size or collision.</p></details><details><summary>Does AI calculate the orbit?</summary><p className="mt-3">No. SGP4 produces positions and velocities. A numerical search estimates closest approach. Gemini only explains these verified outputs; the fixed measurements above never come from generated text.</p></details></div> : <div role="tabpanel">
+      <section className="learning-point"><h3>Method and reproducibility</h3><p>SGP4 propagates both objects to synchronized UTC times in TEME. Separation is the norm of the position difference; relative speed is the norm of the velocity difference at closest approach. The engine samples every 30 seconds and refines candidate minima to a 1 ms numerical tolerance. Numerical precision is not a physical accuracy guarantee.</p></section>
+      <pre>{`DATA MODE: ${simulated ? 'SIMULATION' : 'HISTORICAL SNAPSHOT'}\nOBJECTS: ${e.satellite.name} (${formatObjectIdentifier(e.satellite)}) / ${e.debris.name} (${formatObjectIdentifier(e.debris)})\nELEMENT EPOCHS: ${e.satellite.epoch} / ${e.debris.epoch}\nWINDOW: ${e.startTimeIso} to ${e.endTimeIso}\nCLOSEST APPROACH: ${e.tCaIso}\nSNAPSHOT: ${e.satellite.snapshotCapturedAtIso || 'Not applicable: synthetic inputs'}\nDOWNLOADS: ${e.satellite.downloadedAtIso || 'Not applicable'} / ${e.debris.downloadedAtIso || 'Not applicable'}\nSOURCES: ${e.satellite.source} / ${e.debris.source}\nCOMPUTED: ${e.calculatedAtIso}`}</pre>
+      <section className="learning-point"><h3>Scope and limitations</h3><p>Public orbital elements provide no covariance here. This finite-window search can miss narrow minima and does not model all uncertainties. No collision probability, maneuver advice, operational alert, or trained collision-prediction model is provided. The chart and explanations reference the calculation above, while the 3D playback clock can move independently.</p></section>
+    </div>}
+    <button className="secondary-action" onClick={onNavigateToAnalyzer}>Return to the encounter and chart <ArrowRight size={15}/></button>
+  </div>;
 };

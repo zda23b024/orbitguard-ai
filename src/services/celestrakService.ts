@@ -300,7 +300,7 @@ export function restoreCatalogCache(objects: OrbitalObject[], status: Partial<Da
   lastFetchTimeMs = Number.isFinite(attemptTime) ? attemptTime : 0;
   if (Number.isFinite(retryTime)) retryAfterMs = Math.max(retryAfterMs, retryTime);
   if (Number.isFinite(refusalTime)) providerRefusalUntilMs = Math.max(providerRefusalUntilMs, refusalTime);
-  if (historicalDemoMode) {
+  if (historicalDemoMode || (objects.length > 0 && objects.every(object => object.dataMode === 'historical'))) {
     // Preserve the live-provider cooldown across offline demonstrations without loading live records into the demo catalog.
     if (status.lastError && status.lastError !== 'Live provider access disabled by ORBITGUARD_OFFLINE_MODE.') lastFetchError = status.lastError;
     if (restoredGroups) {
